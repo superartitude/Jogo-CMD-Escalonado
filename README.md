@@ -101,6 +101,4 @@ Pague a dívida inicial **o mais rápido que conseguir**. Enquanto seu saldo no 
 >
 > — Intro do jogo
 
-✅ Quando você compra o Globo Terrestre, **parabeniza você como SOBERANO**
-
 ### 📐 Arquitetura do Rodolfo (Como funciona SEM Ollama)

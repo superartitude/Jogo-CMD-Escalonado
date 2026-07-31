@@ -36,22 +36,35 @@ def organizar_janelas_lado_a_lado():
     # Caminho do Rodolfo
     rodolfo = os.path.join(pasta_base, "Rodolfo.exe")
 
-    # Tenta abrir o Rodolfo
+    # Tenta abrir o Rodolfo em JANELA SEPARADA (próprio CMD)
     try:
         if os.path.exists(rodolfo):
-            subprocess.Popen([rodolfo])
-            sleep(2)  # Espera o Rodolfo abrir
+            # CREATE_NEW_CONSOLE = abre um CMD NOVO exclusivo para o Rodolfo
+            # CREATE_NEW_PROCESS_GROUP = não morre junto com o jogo
+            DETACHED = 0x00000010          # CREATE_NEW_CONSOLE
+            NOVO_GRUPO  = 0x00000200        # CREATE_NEW_PROCESS_GROUP
+            subprocess.Popen(
+                [rodolfo],
+                cwd=pasta_base,
+                creationflags=DETACHED | NOVO_GRUPO
+            )
+            sleep(3)  # Espera a nova janela abrir e o title() rodar
 
-            # Move a janela do Rodolfo
+            # Move a janela do Rodolfo (agora com título garantido)
             cmd_rodolfo = (
                 'powershell -command "'
-                '$w = Get-Process -Name cmd, powershell | Where-Object {$_.MainWindowTitle -like \'*co-pilot*\' or $_.MainWindowTitle -like \'*RODOLFO*\'}; '
-                'if ($w) { '
+                'Start-Sleep -Milliseconds 800; '
+                '$w = Get-Process | Where-Object { $_.MainWindowTitle -like \'*RODOLFO*\' -or $_.MainWindowTitle -like \'*MENTOR*\' -or $_.ProcessName -eq \'Rodolfo\' }; '
+                'if ($w -is [array]) { $w = $w[0] }; '
+                'if ($w -and $w.MainWindowHandle -ne 0) { '
                 '  $b = Add-Type -Name W -Namespace N -Method \'[DllImport(\\"user32.dll\\")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int h, bool r);\' -PassThru; '
-                '  $b::MoveWindow($w.MainWindowHandle, 900, 0, 450, 600, $true) '
+                '  $null = $b::MoveWindow($w.MainWindowHandle, 900, 0, 500, 680, $true); '
+                '  $b2 = Add-Type -Name W2 -Namespace N2 -Method \'[DllImport(\\"user32.dll\\")] public static extern bool SetForegroundWindow(IntPtr h);\' -PassThru; '
+                '  $null = $b2::SetForegroundWindow($w.MainWindowHandle) '
                 '}"'
             )
-            os.system(cmd_rodolfo)
+            subprocess.Popen(["powershell", "-NoProfile", "-Command", cmd_rodolfo],
+                             creationflags=0x08000000)  # CREATE_NO_WINDOW no powershell helper
 
         else:
             print("Rodolfo.exe não encontrado. O jogo continuará sem o assistente.")
@@ -210,7 +223,7 @@ def digitar(texto, velocidade=0.05):
     print()
 #MONGO MONGO MONGO MONGO MONGO MONGO
 LINK_MONGO =  "mongodb+srv://superartitude_db_user:123Mongo@cluster0.tbesz68.mongodb.net/?appName=Cluster0"
-client = pymongo.MongoClient(LINK_MONGO)
+client = pymongo.MongoClient(LINK_MONGO, serverSelectionTimeoutMS=5000, connectTimeoutMS=5000, socketTimeoutMS=10000)
 db = client.get_database('jogo_vida')
 ranking_col = db.ranking
 #MONGO MONGO MONGO MONGO MONGO MONGO
@@ -253,7 +266,7 @@ def ver_ranking(seu_nome_atual):
             bolso = j.get('bolso', 0)
             banco = j.get('banco', 0)
             total = j.get('total', 0)
-            zerou = j.get('Zerou', 0)
+            zerou = j.get('zerar', 0)
             itens = ", ".join(j.get('garagem', []))
 
             # Mostra o Nome e o Total em destaque
@@ -312,7 +325,7 @@ def puxar_ranking_para_rodolfo(seu_nome_atual):
             bolso = j.get('bolso', 0)
             banco = j.get('banco', 0)
             total = j.get('total', 0)
-            zerou = j.get('Zerou', 0)
+            zerou = j.get('zerar', 0)
             itens = ", ".join(j.get('garagem', []))
 
             status = "INICIANTE"
@@ -335,7 +348,7 @@ def puxar_ranking_para_rodolfo(seu_nome_atual):
         return "\n".join(linhas_ranking)
     except Exception:
         return "Falha na rede ou Nuvem ao tentar ler o ranking de competidores!"
-def menu_3():
+def Jogo_principal():
     global Garagem, carteira, nome
 
 
@@ -365,7 +378,7 @@ def menu_3():
     desenho_intro = rf"""{VERDE}
     ░░▒█ █▀▀▀█ █▀▀█ █▀▀▀█   █▀▀▄ █▀▀█   █░░▒█ ▀█▀ █▀▀▄ █▀▀█
     ▄░▒█ █░░▒█ █░▄▄ █░░▒█   █░▒█ █▄▄█   ▒█▒█░ ░█░ █░▒█ █▄▄█            
-    █▄▄█ █▄▄▄█ █▄▄█ █▄▄▄█   █▄▄▀ █░▒█   ░▀▄▀░ ▄█▄ █▄▄▀ █░▒█ *v10 Pro*
+    █▄▄█ █▄▄▄█ █▄▄█ █▄▄▄█   █▄▄▀ █░▒█   ░▀▄▀░ ▄█▄ █▄▄▀ █░▒█ *v11V*
 
     █▀▀█       █▀▀█ █▀▀█ ▀▀█▀▀ █▀▀   █▀▀▄ █▀▀█     █▀▀ █▀▀█ █▀▀█ ░▀░ ▀▀█▀▀ █▀▀█ █░░ ░▀░ █▀▀ █▀▄▀█ █▀▀█
     █▄▄█       █▄▄█ █▄▄▀ ░░█░░ █▀▀   █░░█ █░░█     █░░ █▄▄█ █░░█ ▀█▀ ░░█░░ █▄▄█ █░░ ▀█▀ ▀▀█ █░▀░█ █░░█
@@ -498,9 +511,6 @@ def menu_3():
     c = threading.Thread(target=mineracao_background, daemon=True)
     c.start()
     threading.Thread(target=oscilar_mercado, daemon=True).start()
-
-
-    
 
 
     if bandeira["imposto"] is True:
@@ -726,7 +736,7 @@ def menu_3():
                 B = randint(1,30)
                 soma = A * B
                 try:
-                    resposta = int(float(input(f"Quanto é {A}X{B}?\nRESPOSTA: ").replace(",", " ").replace("."," ").strip()))
+                    resposta = int(input(f"Quanto é {A}X{B}?\nRESPOSTA: ").strip().replace(",","").replace(".",""))
                     if resposta == soma:
                         os.system('cls' if os.name == 'nt' else 'clear')
                         ganho = round(uniform(60.40,130.99), 2)
@@ -769,7 +779,7 @@ def menu_3():
                 conta_definida = choice(contas_divisao)
                 soma = conta_definida[0]//conta_definida[1]
                 try:
-                    resposta = int(input(f"Quanto é {conta_definida[0]} dividido por {conta_definida[1]}?\nRESPOSTA: "))
+                    resposta = int(input(f"Quanto é {conta_definida[0]} dividido por {conta_definida[1]}?\nRESPOSTA: ").strip().replace(",","").replace(".",""))
                     if resposta == soma:
                         os.system('cls' if os.name == 'nt' else 'clear')
                         ganho = round(uniform(300.40,540.99), 2)
@@ -831,25 +841,29 @@ def menu_3():
                     print(f"RESOLVA ESTE DESAFIO EM 30 SEGUNDOS:")
                     try:
                         tempo_on = time()
-                        resposta_1 = int(float(input(f"Quanto é {A}+{B}?\n: ").replace(",", " ").replace("."," ").strip()))
+                        resposta_1 = int(float(input(f"Quanto é {A}+{B}?\n: ").strip().replace(",","").replace(".","")))
                         
                         if resposta_1 == soma1:
                             ganho = round(uniform(1000.40,4000.99), 2)
                             bolsa += ganho
+                            limpar()
                         else:
                             os.system('cls' if os.name == 'nt' else 'clear')
                             erro += 1
                             input("ERRADO! (PRESSIONE ENTER)")
-                        resposta_2 = int(float(input(f"Quanto é {C}X{D}?\n: ").replace(",", " ").replace("."," ").strip()))
+                            limpar()
+                        resposta_2 = int(input(f"Quanto é {C}X{D}?\n: ").strip().replace(",","").replace(".",""))
                         
                         if resposta_2 == soma2:
                             ganho = round(uniform(2500.40,5000.99), 2)
                             bolsa += ganho
+                            limpar()
                         else:
                             os.system('cls' if os.name == 'nt' else 'clear')
                             erro += 1
                             input("ERRADO! (PRESSIONE ENTER)")
-                        resposta_3 = int(input(f"Quanto é {conta_definida[0]} dividido por {conta_definida[1]}?\n: ").replace(".", ""))
+                            limpar()
+                        resposta_3 = int(input(f"Quanto é {conta_definida[0]} dividido por {conta_definida[1]}?\n: ").strip().replace(",","").replace(".",""))
                         if resposta_3 == soma3:
                             ganho = round(uniform(2500.40,5000.99), 2)
                             bolsa += ganho
@@ -2100,16 +2114,18 @@ def menu_3():
         if escolha == "R":
             limpar()
             ver_ranking(nome)
+
+
 def menu_hub():
     while True:
         limpar()
         print("MENU".center(50,"-"))
         escolha = input("[1] PRINCIPAL| JOGO DA VIDA\n[2]Versão do jogo\n>>> ")
         if escolha == "1":
-            menu_3()
+            Jogo_principal()
         if escolha == "2":
             limpar()
-            print("Versão: 10 pro| Rodolfo Cavalcanti")
+            print("Versão: 11V | Paciência de Rodolfo Cavalcanti")
             input("ENTER")
             continue
         else:

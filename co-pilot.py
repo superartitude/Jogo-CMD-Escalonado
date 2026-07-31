@@ -268,32 +268,166 @@ Caso contrário:
 
 Nunca utilize palavrões.
 """
+import socket
+
+def encontrar_porta_livre():
+    """Encontra uma porta TCP livre automaticamente, evita conflito com 8080"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(('127.0.0.1', 0))
+    porta = s.getsockname()[1]
+    s.close()
+    return porta
+
+# ====== DETECÇÃO INTELIGENTE DE CAMINHOS ======
+# Quando EXE standalone: prioriza ARQUIVOS NA MESMA PASTA DO EXE (evita extrair 1.5GB)
+# Só usa _MEIPASS como fallback se não encontrar os arquivos na pasta do executável
 if getattr(sys, 'frozen', False):
-    pasta_base = sys._MEIPASS
+    # Pasta ONDE O USUÁRIO EXECUTOU O Rodolfo.exe (mesma pasta do .exe)
+    pasta_executavel = os.path.dirname(sys.executable)
+    # Pasta temporária do PyInstaller (_MEIPASS)
+    pasta_temp = sys._MEIPASS
+    
+    # 1. Tenta encontrar modelo e llama NA MESMA PASTA DO EXE (modo distribuído recomendado)
+    modelo_ia = os.path.join(pasta_executavel, "gemma-2-2b-it-Q4_K_M.gguf")
+    pasta_llama = os.path.join(pasta_executavel, "llama-b9637-bin-win-cpu-x64")
+    
+    # 2. Se não achar, cai no fallback _MEIPASS (extraído do onefile — mais lento)
+    if not os.path.exists(modelo_ia) or not os.path.exists(pasta_llama):
+        modelo_ia = os.path.join(pasta_temp, "gemma-2-2b-it-Q4_K_M.gguf")
+        pasta_llama = os.path.join(pasta_temp, "llama-b9637-bin-win-cpu-x64")
+    
+    pasta_base = pasta_executavel  # Para logs e saves (na pasta do usuário)
 else:
     pasta_base = os.path.dirname(os.path.abspath(__file__))
+    pasta_llama = os.path.join(pasta_base, "llama-b9637-bin-win-cpu-x64")
+    modelo_ia = os.path.join(pasta_base, "gemma-2-2b-it-Q4_K_M.gguf")
+
 SUBPASTA = "llama-b9637-bin-win-cpu-x64"
-# Mudamos para o llama-server que mantém o modelo aberto na RAM!
-motor_server = os.path.join(pasta_base, SUBPASTA, "llama-server.exe")
-modelo_ia = os.path.join(pasta_base, "gemma-2-2b-it-Q4_K_M.gguf")
+motor_server = os.path.join(pasta_llama, "llama-server.exe")
+# PORTA DINÂMICA (evita conflito com Skype/XAMPP/IIS/etc na porta 8080)
+PORTA_LIVRE = encontrar_porta_livre()
+URL_SERVIDOR = f"http://127.0.0.1:{PORTA_LIVRE}"
+
+# TÍTULO FIXO — Garante que o PowerShell encontre essa janela para mover pro lado direito
+os.system('title RODOLFO CAVALCANTI - MENTOR FINANCEIRO')
 os.system('cls' if os.name == 'nt' else 'clear')
 print("Carregando Assistente... Por favor, aguarde.")
-# Inicia o servidor em segundo plano de forma oculta
-comando_server = [motor_server, "-m", modelo_ia, "--port", "8080", "-c", "2048", "-ngl", "0"]
-server_process = subprocess.Popen(
-    comando_server,
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL,
-    stdin=subprocess.DEVNULL
-)
-# Espera o servidor subir testando a conexão
-for _ in range(30):
-    try:
-        urllib.request.urlopen("http://localhost:8080/health", timeout=1)
+print(f"[DEBUG] Porta escolhida: {PORTA_LIVRE}")
+print(f"[DEBUG] Modelo: {modelo_ia}")
+print(f"[DEBUG] Motor: {motor_server}")
 
+if not os.path.exists(motor_server):
+    print(f"ERRO CRÍTICO: Executável do motor não encontrado em: {motor_server}")
+    print("Coloque a pasta 'llama-b9637-bin-win-cpu-x64' NA MESMA PASTA do Rodolfo.exe")
+    sleep(8)
+    sys.exit(1)
+if not os.path.exists(modelo_ia):
+    print(f"ERRO CRÍTICO: Modelo da IA não encontrado em: {modelo_ia}")
+    print("Coloque o arquivo 'gemma-2-2b-it-Q4_K_M.gguf' NA MESMA PASTA do Rodolfo.exe")
+    sleep(8)
+    sys.exit(1)
+
+# ====== GARANTE QUE AS DLLs SERÃO ENCONTRADAS ======
+if os.name == 'nt':
+    # Adiciona pasta_llama no PATH E também copia as DLLs essenciais para System32 do Python
+    os.environ['PATH'] = pasta_llama + os.pathsep + os.environ.get('PATH', '')
+    # Adiciona via add_dll_directory (Windows 8+/10/11 — método oficial)
+    try:
+        if hasattr(os, 'add_dll_directory'):
+            os.add_dll_directory(pasta_llama)
+    except Exception:
+        pass
+
+# Caminho do log temporário (para ajudar o usuário a diagnosticar)
+caminho_log_erro = os.path.join(pasta_base, "rodolfo_erro_ia.log")
+server_process = None
+arquivo_log = None
+try:
+    arquivo_log = open(caminho_log_erro, "w")
+    # Parâmetros otimizados para CPU (funciona em mais PCs antigos)
+    # --mlock: trava modelo na RAM (evita swap lento em HD)
+    # Removido -ngl 0 para deixar o padrão (funciona melhor)
+    comando_server = [
+        motor_server, "-m", modelo_ia,
+        "--host", "127.0.0.1",
+        "--port", str(PORTA_LIVRE),
+        "-c", "2048",
+        "-t", "4",  # 4 threads de CPU — bom balanço para qualquer PC
+        "--batch-size", "128"
+    ]
+    env_subprocess = os.environ.copy()
+    env_subprocess['PATH'] = pasta_llama + os.pathsep + env_subprocess.get('PATH', '')
+    
+    server_process = subprocess.Popen(
+        comando_server,
+        stdout=arquivo_log,
+        stderr=arquivo_log,
+        stdin=subprocess.DEVNULL,
+        cwd=pasta_llama,
+        env=env_subprocess  # Força as variáveis (incluindo PATH das DLLs)
+    )
+except Exception as e:
+    print(f"ERRO CRÍTICO: Não foi possível iniciar o motor da IA: {e}")
+    print(f"Verifique o log em: {caminho_log_erro}")
+    sleep(8)
+    if arquivo_log:
+        arquivo_log.close()
+    sys.exit(1)
+
+sleep(3)  # Espera um pouco mais para CPUs lentas
+if server_process.poll() is not None:
+    codigo_saida = server_process.returncode
+    print(f"ERRO CRÍTICO: O motor da IA fechou sozinho imediatamente (código {codigo_saida}).")
+    print("Possíveis causas:")
+    print("  → Pouca RAM (precisa de pelo menos 4GB livres)")
+    print("  → Processador muito antigo (sem SSE4.2)")
+    print(f"  → Arquivo corrompido (ver log: {caminho_log_erro})")
+    if arquivo_log:
+        arquivo_log.close()
+    sleep(12)
+    sys.exit(1)
+
+servidor_pronto = False
+for tentativa in range(60):  # Aumentei para 60s (CPUs lentas de netbook)
+    try:
+        urllib.request.urlopen(f"{URL_SERVIDOR}/health", timeout=2)
+        servidor_pronto = True
         break
     except:
+        if server_process.poll() is not None:
+            print(f"ERRO CRÍTICO: O motor da IA caiu durante inicialização (código {server_process.returncode}).")
+            print(f"Ver log: {caminho_log_erro}")
+            if arquivo_log:
+                arquivo_log.close()
+            sleep(12)
+            sys.exit(1)
+        if tentativa % 10 == 0 and tentativa > 0:
+            print(f"  Aguardando inicialização... ({tentativa}/60s)")
         sleep(1)
+
+if not servidor_pronto:
+    print("ERRO CRÍTICO: Tempo esgotado! O motor da IA não respondeu após 60 segundos.")
+    print("O computador pode estar muito lento ou faltar memória RAM.")
+    print(f"Dica técnica: Verifique o log em {caminho_log_erro}")
+    try:
+        if server_process and server_process.poll() is None:
+            server_process.terminate()
+            server_process.wait(timeout=5)
+    except:
+        pass
+    if arquivo_log:
+        arquivo_log.close()
+    sleep(10)
+    sys.exit(1)
+
+# Limpa o log (se deu tudo certo não precisa manter)
+try:
+    if arquivo_log:
+        arquivo_log.close()
+    if os.path.exists(caminho_log_erro):
+        os.remove(caminho_log_erro)
+except:
+    pass
 def conversar_com_rodolfo(mensagem_usuario=""):
     nomes_comerciais = {
     "Trabalho1": "Trabalhos fáceis",
@@ -311,7 +445,7 @@ def conversar_com_rodolfo(mensagem_usuario=""):
     licenças = carregar_dados("licencas", default_licenças)
 
     texto_do_ranking = puxar_ranking_para_rodolfo(nome)
-    url = "http://localhost:8080/completion"
+    url = f"{URL_SERVIDOR}/completion"
     status_garagem = "Vazia" if not Garagem else Garagem
     lista_licencas = ", ".join([nomes_comerciais.get(k, k) for k, v in licenças.items() if v]) if isinstance(licenças, dict) else "Nenhuma"
     info_jogador = f"""SITUAÇÃO ATUAL DO JOGADOR:
@@ -439,5 +573,12 @@ except (EOFError, KeyboardInterrupt):
 finally:
     os.system('cls' if os.name == 'nt' else 'clear')
     print("Desligando assistente...")
-    server_process.terminate()
-    server_process.wait()
+    try:
+        if server_process is not None and server_process.poll() is None:
+            server_process.terminate()
+            try:
+                server_process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                    server_process.kill()
+    except Exception:
+        pass

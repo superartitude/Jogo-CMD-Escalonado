@@ -2562,7 +2562,7 @@ def Jogo_principal():
 
 def enviar_nota_jogo(nota,comentario="Sem comentário",jogador="Anônimo"):
     # Cole aqui a URL do seu webhook do Discord
-    url_webhook = "https://discord.com/api/webhooks/1535025828176593110/006EOnsF_-sj3jHDL71h5uh89FjH80Q-vIkFN9q3AzucPLqsDtzXvocRsYK00Fjw6sm9"
+    url_webhook = DEScodificar('S:HFSxtxtqpSMGCLN//DKNbiSMGcpUIORVPDKNPNTcpUIOtm/ATRqpbi/mwELEibHFSUIOUIOjkSMG/WVDJTSYHMJTSZXLRFGJTSBDWRFGBDWWVDMXZQPLJTSVCFYHMWVDWVDZXL/ZXLZXLQPLE_TENiu_ONTRSMGF_THIRTY_trlSMGkjYHMkjH_KEYD_FIVEL_ZEROMXZWVDHFSJTSwnHFSBDWVCFF_THIRTYkjH_KEYBDWZXLP_QPtrlvltB_INjkF_THIRTYN_MINUSVCFpqYHMA_NINEzlnwncpQ_PQL_ZEROpqSMGD_FIVExtzlnX_PERvltUIOcpR_BARSMGY_ANDJ_KJZXLZXLF_THIRTYkjmwQPLSMGtmVCF')
     
     # Formata a mensagem de um jeito visualmente legal (Rich Embed)
     payload = {
@@ -2579,6 +2579,14 @@ def enviar_nota_jogo(nota,comentario="Sem comentário",jogador="Anônimo"):
             }
         ]
     }
+    
+    # Envia os dados para o Discord
+    resposta = requests.post(url_webhook, json=payload)
+    
+    if resposta.status_code == 204:
+        print("Avaliação enviada com sucesso para o Discord!")
+    else:
+        print(f"Erro ao enviar: {resposta.status_code}")
     
     # Envia os dados para o Discord
     resposta = requests.post(url_webhook, json=payload)

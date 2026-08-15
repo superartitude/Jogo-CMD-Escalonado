@@ -5,9 +5,9 @@ import os
 import threading
 import json
 import sys
-import base64
 import pymongo
 import subprocess
+import requests
 zerar = 0
 VERDE = '\033[32m'
 AMARELO = '\033[33m'
@@ -72,19 +72,178 @@ def organizar_janelas_lado_a_lado():
     except Exception as e:
         print(f"Erro ao iniciar o Rodolfo: {e}")
 def salvar_dados(nome_arquivo, dados):
-        with open(f"{nome_arquivo}.json", "w") as f:
-            texto_json = json.dumps(dados,indent=4)
-            texto_codificado = base64.b64encode(texto_json.encode()).decode()
-            f.write(texto_codificado)
+        with open(f"{nome_arquivo}.json", "w",encoding="utf-8") as f:
+            dados_criptografados = decodificar(dados)
+            json.dump(dados_criptografados, f, indent=4, ensure_ascii=False)
+
 def carregar_dados(nome_arquivo, valor_padrao):
 
         try:
-            with open(f"{nome_arquivo}.json", "r") as f:
-                texto_protegido = f.read()
-                texto_limpo = base64.b64decode(texto_protegido).decode()
-                return json.loads(texto_limpo)
+            with open(f"{nome_arquivo}.json", "r",encoding='utf-8') as f:
+                dados_criptografados = json.load(f)
+                return DEScodificar(dados_criptografados)
         except (FileNotFoundError, Exception):
             return valor_padrao
+alfabeto_codigo = {
+    # Letras Minúsculas (Ajustadas para não gerarem números puros)
+    'a': "ATR", 'b': 'ib', 'c': 'cp', 'd': 'DKN',
+    'e': 'ELE', 'f': 'FXI', 'g': 'h', 'h': 'HFS', 'i': 'bi',
+    'j': 'kj', 'k': 'jk', 'l': 'LTT', 'm': 'tm',
+    'n': 'NTR', 'o': 'UIO', 'p': 'qp', 'q': 'pq',
+    'r': 'RVP', 's': 'SMG', 't': 'xt', 'u': 'wn',
+    'v': 'vlt', 'w': 'mw', 'x': 'xks', 'y': 'yps',
+    'z': 'zln', " ": "ç", "!": "@", "?": "Qst",
+    "-": "trl", "+": "PLS", "\n": "nm", "\r": "kl", "ç": "Pi",
+
+    # Letras Maiúsculas
+    'A': "A_NINE", 'B': 'I_BR', 'C': 'C_SIX', 'D': 'D_FIVE', 'E': 'E_TEN', 
+    'F': 'F_THIRTY', 'G': 'H_GT', 'H': 'H_KEY', 'I': 'B_IN', 'J': 'K_JK', 
+    'K': 'J_KJ', 'L': 'L_ZERO', 'M': 'T_MT', 'N': 'N_MINUS', 'O': 'iu_O', 
+    'P': 'Q_PQ', 'Q': 'P_QP', 'R': 'R_BAR', 'S': 'S_DOL', 'T': 'X_TX', 
+    'U': 'W_W', 'V': 'V_GT', 'W': 'M_M', 'X': 'X_PER', 'Y': 'Y_AND', 
+    'Z': 'Z_PIPE', "Ç": "iP_C", ":": "CLN", ";": "SCLN",
+
+    # Números quando estão DENTRO de um texto comum
+    '0': "ZXL", '1': "WVD", '2': "RFG", '3': "YHM", '4': "KNB",
+    '5': "JTS", '6': "QPL", '7': "MXZ", '8': "BDW", '9': "VCF",
+    '.': "PNT"
+}
+
+# Tabela Numérica Pura (Para quando o valor original for um número int/float real)
+numerico_codigo = {
+    '0': "ZXL", '1': "WVD", '2': "RFG", '3': "YHM", '4': "KNB",
+    '5': "JTS", '6': "QPL", '7': "MXZ", '8': "BDW", '9': "VCF",
+    '.': "PNT", '-': "trl"
+}
+
+
+
+def decodificar(arquivo):
+    # Se for Booleano
+    if isinstance(arquivo, bool):
+        return f"B:{arquivo}"
+        
+    # Se for Dicionário
+    if isinstance(arquivo, dict):
+        return {decodificar(k): decodificar(v) for k, v in arquivo.items()}
+        
+    # Se for Lista
+    if isinstance(arquivo, list):
+        return [decodificar(item) for item in arquivo]
+        
+    # Se for Número (Int ou Float)
+    if isinstance(arquivo, (int, float)):
+        texto_num = str(arquivo)
+        num_cripto = "".join(numerico_codigo.get(c, c) for c in texto_num)
+        return f"N:{num_cripto}"
+        
+    # Se for String (Texto comum)
+    if isinstance(arquivo, str):
+        texto_cripto = "".join(alfabeto_codigo.get(c, c) for c in arquivo)
+        return f"S:{texto_cripto}"
+        
+    return arquivo
+
+
+def DEScodificar(arquivo):
+    # 1. Se for Dicionário
+    if isinstance(arquivo, dict):
+        return {DEScodificar(k): DEScodificar(v) for k, v in arquivo.items()}
+        
+    # 2. Se for Lista
+    if isinstance(arquivo, list):
+        return [DEScodificar(item) for item in arquivo]
+        
+    # 3. Se for uma String criptografada
+    if isinstance(arquivo, str):
+        alfabeto_reverso = {v: k for k, v in alfabeto_codigo.items()}
+        numerico_reverso = {v: k for k, v in numerico_codigo.items()}
+        
+        # Caso A: Era um Booleano Original
+        if arquivo.startswith("B:"):
+            return arquivo[2:] == "True"
+            
+        # Caso B: Era um Número Original (Usa APENAS a tabela de números)
+        if arquivo.startswith("N:"):
+            conteudo = arquivo[2:]
+            chaves_num = sorted(numerico_reverso.keys(), key=len, reverse=True)
+            txt_num = ""
+            i = 0
+            while i < len(conteudo):
+                achou = False
+                for cod in chaves_num:
+                    if conteudo[i:].startswith(cod):
+                        txt_num += numerico_reverso[cod]
+                        i += len(cod)
+                        achou = True
+                        break
+                if not achou:
+                    txt_num += conteudo[i]
+                    i += 1
+            return float(txt_num) if "." in txt_num else int(txt_num)
+            
+        # Caso C: Era um Texto Original (Usa APENAS a tabela de letras)
+        if arquivo.startswith("S:"):
+            conteudo = arquivo[2:]
+            chaves_letra = sorted(alfabeto_reverso.keys(), key=len, reverse=True)
+            txt_original = ""
+            i = 0
+            while i < len(conteudo):
+                achou = False
+                for cod in chaves_letra:
+                    if conteudo[i:].startswith(cod):
+                        txt_original += alfabeto_reverso[cod]
+                        i += len(cod)
+                        achou = True
+                        break
+                if not achou:
+                    txt_original += conteudo[i]
+                    i += 1
+            return txt_original
+
+    return arquivo
+
+default_acoes_jogador = {
+    "ultima_acao": "inicio",
+    "historico": [],
+    "contadores": {
+        "passou_por_Trabalho1": 0,
+        "passou_por_Trabalho2": 0,
+        "passou_por_Trabalho3": 0,
+        "passou_por_Trabalho4": 0,
+        "passou_por_pesca": 0,
+        "passou_por_mineracao_picareta": 0,
+        "passou_por_moto_boy": 0,
+        "passou_por_bike_boy": 0,
+        "passou_por_frete": 0,
+        "passou_por_bolsa": 0,
+        "passou_por_loja": 0,
+        "passou_por_garagem": 0,
+        "passou_por_cripto": 0,
+        "loja_comprou_algo": 0,
+    }
+}
+
+def registrar_acao_jogador(chave_contador, texto_historico):
+    '''Salva log da acao do jogador para o Rodolfo ler.'''
+    global default_acoes_jogador
+    dados = carregar_dados("acoes_jogador", default_acoes_jogador.copy())
+    if "contadores" not in dados:
+        dados["contadores"] = default_acoes_jogador["contadores"].copy()
+    if "historico" not in dados:
+        dados["historico"] = []
+    for kk, vv in default_acoes_jogador["contadores"].items():
+        if kk not in dados["contadores"]:
+            dados["contadores"][kk] = vv
+    if chave_contador and chave_contador in dados["contadores"]:
+        dados["contadores"][chave_contador] += 1
+    if texto_historico:
+        dados["historico"].append(texto_historico)
+        while len(dados["historico"]) > 5:
+            del dados["historico"][0]
+        dados["ultima_acao"] = texto_historico
+    salvar_dados("acoes_jogador", dados)
+
 config_pc = {}
 carteiraKRYPTO = {}
 def mineracao_background():
@@ -176,7 +335,7 @@ precos = {"Petroleo": 1500.0, "Minerio": 800.0, "Soja": 350.0, "Algodao": 120.0,
 def oscilar_mercado():
     global precos, evento_atual
     while True:
-        if random() < 0.10: 
+        if random(1,100) < 45: 
             nome_ev, item_ev, impacto = choice(eventos_possiveis)
             evento_atual = f"ALERTA: {nome_ev}!"
             precos[item_ev] = round(precos[item_ev] * impacto, 2)
@@ -193,13 +352,16 @@ def oscilar_mercado():
             # Trava para o preço não ficar negativo ou zero
             if precos[item] < 0.5: precos[item] = 0.5
         salvar_dados("mercado_ao_vivo", {"precos": precos, "noticia": evento_atual})
-        sleep(15)
+        sleep(30)
 def imposto():
     while True:
-        sleep(300)
+        sleep(298)
         try:
-            if carteira["Banco"] >= 200000:
-                
+            if carteira["Banco"] >= 450000:
+                if carteira['Banco'] >= 450000:
+                    carteira["Banco"]  -= carteira["Banco"] * 0.35
+                    salvar_dados("carteira",carteira)
+            elif carteira["Banco"] >= 200000:
                 if carteira["Banco"] >= 200000:
                     carteira["Banco"]  -= carteira["Banco"] * 0.29
                     salvar_dados("carteira",carteira)
@@ -209,7 +371,7 @@ def imposto():
                     salvar_dados("carteira",carteira)
             elif carteira["Banco"] >= 25000:
                 if carteira["Banco"] >= 25000:
-                    carteira["Banco"]  -= carteira["Banco"] * 0.14
+                    carteira["Banco"]  -= carteira["Banco"] * 0.08
                     salvar_dados("carteira",carteira)
                 else:
                     pass
@@ -259,7 +421,7 @@ def ver_ranking(seu_nome_atual):
         ]
         # Busca os 10 mais ricos
         jogadores = ranking_col.find().sort("total", -1).limit(10)
-
+        status = "INICIANTE"
         for i, j in enumerate(jogadores, 1):
             # Pega os dados do banco (se não existirem, o .get coloca 0 ou "Nenhum")
             nome_player = j.get('nome', 'Desconhecido')
@@ -268,11 +430,12 @@ def ver_ranking(seu_nome_atual):
             total = j.get('total', 0)
             zerou = j.get('zerar', 0)
             itens = ", ".join(j.get('garagem', []))
+            possui_empresa = j.get('Empresa')
 
             # Mostra o Nome e o Total em destaque
             for valor_minimo, nome_titulo in titulos:
                 if total >= valor_minimo:
-                    status = nome_titulo
+                    status = nome_titulo                    
                     break   
             if nome_player == seu_nome_atual:
                 print(f"{i}º| {status:<15} | {nome_player} <--- (EU)")
@@ -281,11 +444,12 @@ def ver_ranking(seu_nome_atual):
             print(f"    TOTAL: R$ {total:,.2f} (Bolso: R$ {bolso:,.2f} | Banco: R$ {banco:,.2f})")
             print(f"    Zerou: {zerar} vezes")
             print(f"    Itens: {itens if itens else 'Nenhum'}")
+            print(f"    Empresa: {possui_empresa if possui_empresa else 'Não possui empresa'}")
             print("—" * 40)
 
         input("\nPressione Enter para voltar ao menu...")
-    except Exception:
-        print("Falha na rede ou Nuvem!")
+    except Exception as e:
+        print(f"Falha na rede ou Nuvem!\n{e}")
         sleep(2)
 #VER RANKING PARA ESTE JOGO
 #VER RANKING PARA A IA ASSISTENTE
@@ -357,8 +521,11 @@ def Jogo_principal():
         while True:
             sleep(150)
             valor_atual = carteira["Banco"]
-                
-            if valor_atual > 10000:
+            if valor_atual > 100000:
+                taxa = 0.2
+            elif valor_atual > 50000:
+                taxa = 0.1  
+            elif valor_atual > 10000:
                 taxa = 0.04  # 4% 
             elif valor_atual > 5000:
                 taxa = 0.03  # 3%
@@ -376,17 +543,24 @@ def Jogo_principal():
                 except:
                     pass
     desenho_intro = rf"""{VERDE}
-    ░░▒█ █▀▀▀█ █▀▀█ █▀▀▀█   █▀▀▄ █▀▀█   █░░▒█ ▀█▀ █▀▀▄ █▀▀█
-    ▄░▒█ █░░▒█ █░▄▄ █░░▒█   █░▒█ █▄▄█   ▒█▒█░ ░█░ █░▒█ █▄▄█            
-    █▄▄█ █▄▄▄█ █▄▄█ █▄▄▄█   █▄▄▀ █░▒█   ░▀▄▀░ ▄█▄ █▄▄▀ █░▒█ *v11V*
-
-    █▀▀█       █▀▀█ █▀▀█ ▀▀█▀▀ █▀▀   █▀▀▄ █▀▀█     █▀▀ █▀▀█ █▀▀█ ░▀░ ▀▀█▀▀ █▀▀█ █░░ ░▀░ █▀▀ █▀▄▀█ █▀▀█
-    █▄▄█       █▄▄█ █▄▄▀ ░░█░░ █▀▀   █░░█ █░░█     █░░ █▄▄█ █░░█ ▀█▀ ░░█░░ █▄▄█ █░░ ▀█▀ ▀▀█ █░▀░█ █░░█
-    █░▒█       ▀░░▀ ▀░▀▀ ░░▀░░ ▀▀▀   ▀▀▀░ ▀▀▀▀     ▀▀▀ ▀░░▀ █▀▀▀ ▀▀▀ ░░▀░░ ▀░░▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀░░░▀ ▀▀▀▀ by rogerin {RESET}
+  _      _   __         ____               _                           
+ | |    (_) / _|  ___  | __ )  _   _  ___ (_) _ __    ___  ___  ___    
+ | |    | || |_  / _ \ |  _ \ | | | |/ __|| || '_ \  / _ \/ __|/ __|   
+ | |___ | ||  _||  __/ | |_) || |_| |\__ \| || | | ||  __/\__ \\__ \   
+ |_____||_||_|   \___| |____/  \__,_||___/|_||_| |_| \___||___/|___/   
+  _____  _____  _____  _____  _____  _____  _____  _____  _____  _____ 
+ |_____||_____||_____||_____||_____||_____||_____||_____||_____||_____|{RESET}{AMARELO}
+   ____         _      _  _____       _         _                      
+  / ___|  ___  | |  __| ||_   _|_ __ (_)  __ _ | |                     
+ | |  _  / _ \ | | / _` |  | | | '__|| | / _` || |        12.5V* Business UPDATE - Debug +             
+ | |_| || (_) || || (_| |  | | | |   | || (_| || |                     
+  \____| \___/ |_| \__,_|  |_| |_|   |_| \__,_||_|                     
+  _____  _____  _____  _____  _____  _____  _____                      
+ |_____||_____||_____||_____||_____||_____||_____|       {RESET} By Arthur R.S (Rogerin)
 """
     sleep(4)
     default_primeira_intro = 1
-    default_nome = "user"
+    default_nome = "INDIVIDADO"
     nome = carregar_dados("nome",default_nome)
     primeira_intro = carregar_dados("intro", default_primeira_intro)
 
@@ -394,7 +568,7 @@ def Jogo_principal():
 
     #jogo#
     limpar()
-    digitar(desenho_intro, velocidade=0.02)#intro pre jogo
+      
     sleep(4)
     default_carteira = {"Bolso": 0.0, "Banco": -1400.0}
     default_Garagem = {}
@@ -408,14 +582,46 @@ def Jogo_principal():
     licenças = carregar_dados("licencas", default_licenças)
     Garagem = carregar_dados("garagem", default_Garagem)
     placa_caminhao = carregar_dados("placa_caminhão", "SEM-PLACA")
-    default_bandeira = {"imposto": False}
+    default_bandeira = {"imposto": False,"empresa":False}
     bandeira = carregar_dados("bandeira",default_bandeira)
+    for chave, valor in default_bandeira.items():
+        if chave not in bandeira:
+            bandeira[chave] = valor
+    default_estudos = {"Administração": 0,"Gestão de finanças": 0,"Contabilidade": 0}
+    estudos = carregar_dados("estudos",default_estudos)
+    default_estudos_pag_inicial = {"Administração": False, "Gestão de finanças": False, "Contabilidade": False}
+    estudos_pag_inicial = carregar_dados("estudos_pag_inicial",default_estudos_pag_inicial)
+    default_nome_empresa = "DIVIDENDOS ANÔNIMOS"
+    nome_empresa = carregar_dados("nome_empresa",default_nome_empresa)
+    default_empresa = {
+        "Nível":0,
+        "Nível_propaganda": 0,
+        "Faturamento": 0,
+        "custo_upgrade": 150000,
+        "custo_propaganda": 100000
+    }
+    empresa = carregar_dados("empresa",default_empresa)
     t = threading.Thread(target=render, daemon=True)
     t.start()
 
-    def atualizar_nuvem(nome_usuario, bolso, banco, lista_garagem,zerar):
+    def pagamento_da_empresa():
+        while True:
+            sleep(71)
+            carteira['Banco'] += empresa['Faturamento']
+            try:
+                salvar_dados("carteira", carteira)
+            except:
+                pass
+
+
+
+    def atualizar_nuvem(nome_usuario, bolso, banco, lista_garagem,zerar,bandeira_empresa):
         try:
             total = bolso + banco
+            if bandeira_empresa == True:
+                possui_emrpesa = f"Possui Empresa| Faturamento de R${empresa["Faturamento"]:,.2f}"
+            else:
+                possui_emrpesa = "Não possui empresa"
             ranking_col.update_one(
                 {"nome": nome_usuario},
                 {"$set": {
@@ -423,7 +629,8 @@ def Jogo_principal():
                     "bolso": bolso,
                     "banco": banco,
                     "garagem": lista_garagem, 
-                    "zerar": zerar# Salva a lista direto!
+                    "zerar": zerar,
+                    "Empresa": possui_emrpesa# Salva a lista direto!
                 }},
                 upsert=True # Se não existir o nome, ele cria um novo
             )
@@ -436,20 +643,13 @@ def Jogo_principal():
         os.system('cls' if os.name == 'nt' else 'clear')
         print(f"Você comprou o mundo, tudo é seu. Parabéns por zerar o game {nome}")
         DECISAO = input("Você quer reiniciar o jogo?\n N/S: ")
-        if DECISAO.strip().upper() == "S":
-            carteira =  salvar_dados("carteira", default_carteira)
-            carteira = carregar_dados("carteira", default_carteira)
-            licenças = salvar_dados("licencas",default_licenças)
-            licenças = carregar_dados("licencas",default_licenças)
-            Garagem = salvar_dados("garagem",default_Garagem)
-            Garagem = carregar_dados("garagem",default_Garagem)
-            bandeira = salvar_dados("bandeira",default_bandeira)
-            bandeira = carregar_dados("bandeira",default_bandeira)
-            
+        if DECISAO.strip().upper() == "S":            
             arquivos_para_deletar = [
                 "config_pc.json", "Carteira Krypto.json", "carteira_motorista.json",
                 "placa_caminhão.json", "estoque agro.json", "Historico preços.json",
-                "fadiga.json", "Historico km.json", "aviso.json"
+                "fadiga.json", "Historico km.json", "aviso.json","empresa.json",
+                "estudos.json","estudos_pag_inicial.json","mercado_ao_vivo.json","nome_empresa.json",
+                "acoes_jogador.json","licencas.json","garagem.json","carteira.json","aviso.json","bandeira.json"
             ]
 
             for arquivo in arquivos_para_deletar:
@@ -461,10 +661,10 @@ def Jogo_principal():
             salvar_dados("zerar", zerar)
             primeira_intro +=1
             salvar_dados("intro",primeira_intro)
-            atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+            atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
         else:
             print("OBRIGADO POR JOGAR| FECHE O PROGRAMA (1 hora para fechar automaticamente)")
-            atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+            atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
             sleep(3600)
             exit()
 
@@ -472,7 +672,7 @@ def Jogo_principal():
     if primeira_intro > 0:
         if os.path.exists("Carteira Krypto.json"):
             os.remove("Carteira Krypto.json")
-        os.system('cls' if os.name == 'nt' else 'clear')
+        limpar()
         if zerar == 0:
             digitar("PARABÉNS! Você é um empresário fracassado...")
         else:
@@ -484,39 +684,62 @@ def Jogo_principal():
         sleep(2)
         digitar(f"{AMARELO}'porque não trabalhei na mecânica do meu avô?'{RESET}",velocidade=0.08)
         sleep(2)
-        digitar("Mas você teve um estalo: Se o mundo é cheio de gente preguiçosa, resolver problemas bobos é uma mina de ouro.")
-        digitar("O mercado é um oceano de preguiça. Aprenda a pescar onde ninguém quer olhar.")
+        digitar("Mas você descobriu uma coisa.")
+        sleep(1)
+        digitar("Dinheiro não aparece só porque você trabalhou duro.")
+        digitar(f"Ele aparece quando você sabe onde colocar o seu{VERMELHO} esforço{RESET}.")
+        digitar("Uma carga pode valer uma fortuna")
+        sleep(0.4)
+        digitar("Uma mina pode esconder milhões")
+        digitar("Mas um tanque cheio pode transformar lucro em prejuízo.")
         sleep(3)
-        digitar("Então começe a fazer o que sabe de melhor...")
+        digitar(f"E uma decisão ruim... ...pode fazer você começar tudo{VERMELHO} de novo.{RESET}",velocidade=0.08)
         sleep(3)
-        digitar(rf"""{AMARELO}
-
-    █▀▀▀ ▀▄ ▄▀ █▀▀█ █    █▀▀▀█ ▀▀█▀▀ █▀▀█ █▀▀█   █▀▀█   █▀▀█ █▀▀█ █▀▀▀ █▀▀█ █  █ ▀█▀ █▀▀█ █▀▀█      
-    █▀▀▀   █   █▄▄█ █    █░░▒█   █   █▄▄█ █▄▄▀   █▄▄█   █▄▄█ █▄▄▀ █▀▀▀ █░▄▄ █░▒█ ░█░ █░░░ █▄▄█      
-    █▄▄▄ ▄▀ ▀▄ █    █▄▄█ █▄▄▄█ ░▒█░░ █ ▒█ █ ▒█   █ ▒█   █░░░ █░▒█ █▄▄▄ █▄▄█ ▀▄▄▀ ▄█▄ █▄▄█ █░▒█....       
-                                                                                      █░░       {RESET}
-                                                                                                ou algo desse tipo""",velocidade=0.01)
-        
-        
-        
-        
+        digitar("Existe vários empregos")
+        digitar("Se um não dá conta, pegue dois")
+        digitar("Se nem dois dá conta, PEGUE TODOS!")
+        sleep(1.8)
+        digitar("Agora dê seu jeito... Porque está prestes a entrar no..")
+        sleep(2.5)
+        limpar()
+        digitar(rf"""{VERDE}
+                 _      _   __         ____               _                           
+                | |    (_) / _|  ___  | __ )  _   _  ___ (_) _ __    ___  ___  ___    
+                | |    | || |_  / _ \ |  _ \ | | | |/ __|| || '_ \  / _ \/ __|/ __|   
+                | |___ | ||  _||  __/ | |_) || |_| |\__ \| || | | ||  __/\__ \\__ \   
+                |_____||_||_|   \___| |____/  \__,_||___/|_||_| |_| \___||___/|___/   
+                _____  _____  _____  _____  _____  _____  _____  _____  _____  _____ 
+                |_____||_____||_____||_____||_____||_____||_____||_____||_____||_____|{RESET}{AMARELO}
+                 ____          _      _  _____       _         _                      
+                / ___|   ___  | |  __| ||_   _|_ __ (_)  __ _ | |                     
+                | |  _  / _ \ | | / _` |  | | | '__|| | / _` || |                    
+                | |_| || (_) || || (_| |  | | | |   | || (_| || |                     
+                 \____| \___/ |_| \__,_|  |_| |_|   |_| \__,_||_|                     
+                _____  _____  _____  _____  _____  _____  _____                      
+                |_____||_____||_____||_____||_____||_____||_____|       {RESET} 
+""",velocidade=0.002)
         sleep(6.5)
         limpar()
-        
         if not os.path.exists("nome.json"):
             nome = input("SEU NOME: ")
             salvar_dados("nome",nome)
         primeira_intro -= 1
         salvar_dados("intro",primeira_intro)
+    else:
+        digitar(desenho_intro, velocidade=0.01) 
+
+    
     c = threading.Thread(target=mineracao_background, daemon=True)
     c.start()
     threading.Thread(target=oscilar_mercado, daemon=True).start()
 
 
-    if bandeira["imposto"] is True:
+    if bandeira.get("imposto",False) is True: #PARA INICIAR IMPOSTO
         threading.Thread(target=imposto, daemon= True).start()
-
+    if bandeira.get("empresa",False) is True: #PARA INICIAR GANHOS DA EMPRESA
+        threading.Thread(target=pagamento_da_empresa,daemon=True).start()
     organizar_janelas_lado_a_lado()
+    #INICIO DO WHILE PARA JOGO PRINCIPAL
     while True:
         #DIVIDA
         if carteira["Bolso"] <0:
@@ -526,20 +749,25 @@ def Jogo_principal():
             pass
         #DIVIDA
 
-        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
         limpar()
-        print("JOGO DA VIDA".center(10,"-"))
+        print("JOGO DA VIDA".center(40,"="))
         print(f"USUÁRIO: {nome}")
-        
+
+        #MENSAGENS COSTUMIZADAS PARA QUEM ZEROU O GAME
         if zerar == 1:
             print(f"!Você zerou o jogo {zerar} vez! :)")
         elif 1 < zerar < 3:
             print(f"!Você zerou o jogo {zerar} vezes! :)")
         elif zerar >= 3:
             print(f"Caramba, Você zerou o jogo {zerar} vezes! Cansou não?\n")
+        #MENSAGENS COSTUMIZADAS PARA QUEM ZEROU O GAME
 
         zero = 0
         zerozero = carregar_dados("aviso",zero)
+
+        um = 1
+        um_um = carregar_dados("aviso",um)
 
         if "Barco de pesca" in Garagem:print("[10] Ir pescar") 
         if "Moto" in Garagem:print("[11] Moto boy")
@@ -550,139 +778,146 @@ def Jogo_principal():
         if "Bicicleta" in Garagem: print("[16] Bike boy")
         if carteira["Banco"] > 25000:
             if zerozero <= 0:
-                print("Você tem um valor alto na conta, a receita federal ira cobrar uma taxa a cada cinco minutos!!!")
+                limpar()
+                print("Você tem um valor alto na conta, a receita federal ira cobrar uma taxa a cada cinco minutos!!!\nPense aonde vai deixar seu dinheiro.")
                 zero += 1
                 sleep(5)
+                limpar()
                 salvar_dados("aviso",zero)
                 bandeira["imposto"] = True
                 salvar_dados("bandeira",bandeira)
                 threading.Thread(target=imposto, daemon= True).start()
                 continue
-        
-        
-        escolha = input("OPÇÕES    -------------------> [R] Ver ranking \n[1] Trabalhos Fáceis\n[2] Trabalhos Médios\n[3] Trabalhos Difíceis\n[4] Desafio do tesouro\n[5] LOJA DE DESBLOQUEIO DE TRABALHOS\n[6] Visualizar carteira\n[7] Banco do Brasil\n[8] Ver garagem\n[9] Mercado\n--> ").upper()
+
+
+        if all(valor == 100 for valor in estudos.values()):
+            escolha = input("OPÇÕES|                ONLINE| [R] Ver ranking           EDUCAÇÃO| [E] Ensino Superior           EMPRESA| [C] Comércio\n[1] Trabalhos Fáceis\n[2] Trabalhos Médios\n[3] Trabalhos Difíceis\n[4] Desafio do tesouro\n[5] LOJA DE DESBLOQUEIO DE TRABALHOS\n[6] Visualizar carteira\n[7] Banco do Brasil\n[8] Ver garagem\n[9] Mercado\n--> ").upper()
+        else:    
+            escolha = input("OPÇÕES|                ONLINE| [R] Ver ranking           EDUCAÇÃO| [E] Ensino Superior\n[1] Trabalhos Fáceis\n[2] Trabalhos Médios\n[3] Trabalhos Difíceis\n[4] Desafio do tesouro\n[5] LOJA DE DESBLOQUEIO DE TRABALHOS\n[6] Visualizar carteira\n[7] Banco do Brasil\n[8] Ver garagem\n[9] Mercado\n--> ").upper()
+
         #TODO O RESTO
         if escolha == "5": #Venda licença
-                if carteira["Banco"] < 0:
-                    print("Pague suas dívidas antes de efetuar qualquer compra!")
-                    input("ENTER PARA CONTINUAR")
-                else:
-                    loja_clt = True
-                    while loja_clt:
-                        try:
-                            os.system('cls' if os.name == 'nt' else 'clear')
-                            print("LICENÇAS CLT".center(40,"="))
-                            print(f"[]Trabalhos fáceis: {clt_shop['Trabalho1']}")
+            registrar_acao_jogador("passou_por_loja", "Entrou na Loja de Licencas de Trabalho")
+            if carteira["Banco"] < 0:
+                print("Pague suas dívidas antes de efetuar qualquer compra!")
+                input("ENTER PARA CONTINUAR")
+            else:
+                loja_clt = True
+                while loja_clt:
+                    try:
+                        os.system('cls' if os.name == 'nt' else 'clear')
+                        print("LICENÇAS CLT".center(40,"="))
+                        print(f"[]Trabalhos fáceis: {clt_shop['Trabalho1']}")
+                        if licenças["Trabalho2"] is False:
+                            print(f"[1]Trabalhos Médios: R${clt_shop['Trabalho2']:,.2f}")
+                        else:
+                            print(f"[1]Trabalhos Médios: COMPRADO")
+                        if licenças["Trabalho3"] is False:
+                            print(f"[2]Trabalhos Difíceis: R${clt_shop['Trabalho3']:,.2f}")
+                        else:
+                            print(f"[2]Trabalhos Difíceis: COMPRADO")
+                        if licenças["Trabalho4"] is False:
+                            print(f"[3]Desafio do tesouro: R${clt_shop['Trabalho4']:,.2f}")
+                        else:
+                            print(f"[3]Desafio do tesouro: COMPRADO")
+                        if licenças["Carteira D"] is False:
+                            print(f"[4]Carteira D: R${clt_shop['Carteira D']:,.2f}")
+                        else:
+                            print(f"[4]Carteira D: COMPRADO")
+
+
+                        opcao = input("ESCOLHA UMA LICENÇA PARA COMPRAR(ENTER PARA SAIR)\n--> ")
+                        if opcao == "1":
                             if licenças["Trabalho2"] is False:
-                                print(f"[1]Trabalhos Médios: R${clt_shop['Trabalho2']:.2f}")
+                                if carteira["Bolso"] >= clt_shop["Trabalho2"]:
+                                    carteira["Bolso"] -= clt_shop["Trabalho2"]
+                                    licenças["Trabalho2"] = True
+                                    salvar_dados("licencas", licenças)
+                                    salvar_dados("carteira", carteira)
+                                    input("Você comprou a licença! (ENTER)")
+                                    continue
+                                else:
+                                    os.system('cls' if os.name == 'nt' else 'clear')
+                                    print("Você não tem dinheiro!")
+                                    input("Enter para continuar")
+                                    continue
                             else:
-                                print(f"[1]Trabalhos Médios: COMPRADO")
+                                print("Você já comprou esta licença!")
+                                input("\n(pressione ENTER para continuar)")
+                                continue
+                        if opcao == "2":
                             if licenças["Trabalho3"] is False:
-                                print(f"[2]Trabalhos Difíceis: R${clt_shop['Trabalho3']:.2f}")
+                                if carteira["Bolso"] >= clt_shop["Trabalho3"]:
+                                    carteira["Bolso"] -= clt_shop["Trabalho3"]
+                                    licenças["Trabalho3"] = True
+                                    salvar_dados("licencas", licenças)
+                                    salvar_dados("carteira", carteira)
+                                    input("Você comprou a licença! (ENTER)")
+                                    continue
+                                else:
+                                    os.system('cls' if os.name == 'nt' else 'clear')
+                                    print("Você não tem dinheiro!")
+                                    input("Enter para continuar")
+                                    continue
                             else:
-                                print(f"[2]Trabalhos Difíceis: COMPRADO")
+                                print("Você já comprou esta licença!")
+                                input("\n(pressione ENTER para continuar)")
+                                continue
+                        if opcao == "3":
                             if licenças["Trabalho4"] is False:
-                                print(f"[3]Desafio do tesouro: R${clt_shop['Trabalho4']:.2f}")
+                                if carteira["Bolso"] >= clt_shop["Trabalho4"]:
+                                    carteira["Bolso"] -= clt_shop["Trabalho4"]
+                                    licenças["Trabalho4"] = True
+                                    salvar_dados("licencas", licenças)
+                                    salvar_dados("carteira", carteira)
+                                    input("Você comprou a licença! (ENTER)")
+                                    continue
+                                else:
+                                    os.system('cls' if os.name == 'nt' else 'clear')
+                                    print("Você não tem dinheiro!")
+                                    input("Enter para continuar")
+                                    continue
                             else:
-                                print(f"[3]Desafio do tesouro: COMPRADO")
+                                print("Você já comprou esta licença!")
+                                input("\n(pressione ENTER para continuar)")
+                                continue
+                        if opcao == "4":
                             if licenças["Carteira D"] is False:
-                                print(f"[4]Carteira D: R${clt_shop['Carteira D']:.2f}")
+                                if carteira["Bolso"] >= clt_shop["Carteira D"]:
+                                    carteira["Bolso"] -= clt_shop["Carteira D"]
+                                    licenças["Carteira D"] = True
+                                    salvar_dados("licencas", licenças)
+                                    salvar_dados("carteira", carteira)
+                                    input("Você comprou a licença! (ENTER)")
+                                    continue
+                                else:
+                                    os.system('cls' if os.name == 'nt' else 'clear')
+                                    print("Você não tem dinheiro!")
+                                    input("Enter para continuar")
+                                    continue
                             else:
-                                print(f"[4]Carteira D: COMPRADO")
-
-
-                            opcao = input("ESCOLHA UMA LICENÇA PARA COMPRAR(ENTER PARA SAIR)\n--> ")
-                            if opcao == "1":
-                                if licenças["Trabalho2"] is False:
-                                    if carteira["Bolso"] >= clt_shop["Trabalho2"]:
-                                        carteira["Bolso"] -= clt_shop["Trabalho2"]
-                                        licenças["Trabalho2"] = True
-                                        salvar_dados("licencas", licenças)
-                                        salvar_dados("carteira", carteira)
-                                        input("Você comprou a licença! (ENTER)")
-                                        continue
-                                    else:
-                                        os.system('cls' if os.name == 'nt' else 'clear')
-                                        print("Você não tem dinheiro!")
-                                        input("Enter para continuar")
-                                        continue
-                                else:
-                                    print("Você já comprou esta licença!")
-                                    input("\n(pressione ENTER para continuar)")
-                                    continue
-                            if opcao == "2":
-                                if licenças["Trabalho3"] is False:
-                                    if carteira["Bolso"] >= clt_shop["Trabalho3"]:
-                                        carteira["Bolso"] -= clt_shop["Trabalho3"]
-                                        licenças["Trabalho3"] = True
-                                        salvar_dados("licencas", licenças)
-                                        salvar_dados("carteira", carteira)
-                                        input("Você comprou a licença! (ENTER)")
-                                        continue
-                                    else:
-                                        os.system('cls' if os.name == 'nt' else 'clear')
-                                        print("Você não tem dinheiro!")
-                                        input("Enter para continuar")
-                                        continue
-                                else:
-                                    print("Você já comprou esta licença!")
-                                    input("\n(pressione ENTER para continuar)")
-                                    continue
-                            if opcao == "3":
-                                if licenças["Trabalho4"] is False:
-                                    if carteira["Bolso"] >= clt_shop["Trabalho4"]:
-                                        carteira["Bolso"] -= clt_shop["Trabalho4"]
-                                        licenças["Trabalho4"] = True
-                                        salvar_dados("licencas", licenças)
-                                        salvar_dados("carteira", carteira)
-                                        input("Você comprou a licença! (ENTER)")
-                                        continue
-                                    else:
-                                        os.system('cls' if os.name == 'nt' else 'clear')
-                                        print("Você não tem dinheiro!")
-                                        input("Enter para continuar")
-                                        continue
-                                else:
-                                    print("Você já comprou esta licença!")
-                                    input("\n(pressione ENTER para continuar)")
-                                    continue
-                            if opcao == "4":
-                                if licenças["Carteira D"] is False:
-                                    if carteira["Bolso"] >= clt_shop["Carteira D"]:
-                                        carteira["Bolso"] -= clt_shop["Carteira D"]
-                                        licenças["Carteira D"] = True
-                                        salvar_dados("licencas", licenças)
-                                        salvar_dados("carteira", carteira)
-                                        input("Você comprou a licença! (ENTER)")
-                                        continue
-                                    else:
-                                        os.system('cls' if os.name == 'nt' else 'clear')
-                                        print("Você não tem dinheiro!")
-                                        input("Enter para continuar")
-                                        continue
-                                else:
-                                    print("Você já comprou esta licença!")
-                                    input("\n(pressione ENTER para continuar)")
-                                    continue
-                            
-                            
-                            
-                            
-                            else:
-                                loja_clt = False
-                                break
-                        except (ValueError, TypeError) :
-                            print("DIGITE UM NÙMERO|VOCÊ JA COMPROU ESTA LICENÇA!")
-                            input("ENTER PARA CONTINUAR")
-                            continue
+                                print("Você já comprou esta licença!")
+                                input("\n(pressione ENTER para continuar)")
+                                continue
+                        
+                        
+                        
+                        
+                        else:
+                            loja_clt = False
+                            break
+                    except (ValueError, TypeError) :
+                        print("DIGITE UM NÙMERO|VOCÊ JA COMPROU ESTA LICENÇA!")
+                        input("ENTER PARA CONTINUAR")
+                        continue
         if escolha == "6": #Ver Carteira/Conta Banco
             ambiente = True
             while ambiente:
                 if carteira["Banco"] >=0:
-                    print(f"NO BANCO: R${carteira["Banco"]:.2f}")
+                    print(f"NO BANCO: R${carteira["Banco"]:,.2f}")
                 else:
-                    print(f"NO BANCO: R${carteira["Banco"]:.2f} DE DÍVIDAS!")
-                print(f"NA CARTEIRA: R${carteira["Bolso"]:.2f}")
+                    print(f"NO BANCO: R${carteira["Banco"]:,.2f} DE DÍVIDAS!")
+                print(f"NA CARTEIRA: R${carteira["Bolso"]:,.2f}")
                 sair = input("ENTER PARA VOLTAR")
                 if sair.strip() == "":
                     ambiente = False
@@ -690,6 +925,7 @@ def Jogo_principal():
                 sleep(2)
                 limpar()
         if escolha == "1": #TRABALHOS FÁCEIS
+            registrar_acao_jogador("passou_por_Trabalho1", "Acessou Trabalhos Faceis")
             trabalho = True
             while trabalho is True:
                 os.system('cls' if os.name == 'nt' else 'clear')
@@ -702,9 +938,9 @@ def Jogo_principal():
                         os.system('cls' if os.name == 'nt' else 'clear')
                         ganho = round(uniform(5.40,50.30), 2)
                         carteira["Bolso"] += ganho
-                        print(f"Parabéns, você ganhou R${ganho:.2f} em dinheiro vivo!")
+                        print(f"Parabéns, você ganhou R${ganho:,.2f} em dinheiro vivo!")
                         salvar_dados("carteira", carteira)
-                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
                         reinicio = input("Continuar? S/N:  ")
                         if reinicio.strip().upper() == "S" or "":
                             continue
@@ -723,6 +959,7 @@ def Jogo_principal():
                 except ValueError:
                     print("digite apenas números aqui!")
         if escolha == "2": #TRABALHOS MÉDIOS
+            registrar_acao_jogador("passou_por_Trabalho2", "Acessou Trabalhos Medios")
             if licenças["Trabalho2"] is True:
                 pass
             else:
@@ -742,8 +979,8 @@ def Jogo_principal():
                         ganho = round(uniform(60.40,130.99), 2)
                         carteira["Bolso"] += ganho
                         salvar_dados("carteira", carteira)
-                        print(f"Parabéns, você ganhou R${ganho:.2f} em dinheiro vivo!")
-                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+                        print(f"Parabéns, você ganhou R${ganho:,.2f} em dinheiro vivo!")
+                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
                         reinicio = input("Continuar? S/N:  ")
                         if reinicio.strip().upper() == "S" or "":
                             continue
@@ -762,6 +999,7 @@ def Jogo_principal():
                 except ValueError:
                     print("digite apenas números aqui!")
         if escolha == "3": #TRABALHOS DIFÍCEIS
+            registrar_acao_jogador("passou_por_Trabalho3", "Acessou Trabalhos Dificeis")
             if licenças["Trabalho3"] is True:
                 pass
             else:
@@ -785,8 +1023,8 @@ def Jogo_principal():
                         ganho = round(uniform(300.40,540.99), 2)
                         carteira["Bolso"] += ganho
                         salvar_dados("carteira", carteira)
-                        print(f"Parabéns, você ganhou R${ganho:.2f} em dinheiro vivo!")
-                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+                        print(f"Parabéns, você ganhou R${ganho:,.2f} em dinheiro vivo!")
+                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
                         reinicio = input("Continuar? S/N:  ")
                         if reinicio.strip().upper() == "S" or "":
                             continue
@@ -805,6 +1043,7 @@ def Jogo_principal():
                 except ValueError:
                     print("digite apenas números aqui!")
         if escolha == "4": #Desafio do tesouro
+            registrar_acao_jogador("passou_por_Trabalho4", "Acessou Desafio do Tesouro")
             if licenças["Trabalho4"] is True:
                 pass
             else:
@@ -895,8 +1134,8 @@ def Jogo_principal():
                                     print("Você errou tudo!")
                                 carteira["Bolso"] += bolsa
                                 salvar_dados("carteira", carteira)
-                                atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
-                                print(f"Você ganhou R${bolsa:.2f} em dinheiro vivo!")
+                                atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
+                                print(f"Você ganhou R${bolsa:,.2f} em dinheiro vivo!")
 
                                 reinicio = input("Continuar? S/N: ")
                                 os.system('cls' if os.name == 'nt' else 'clear')
@@ -911,6 +1150,7 @@ def Jogo_principal():
                         print("DIGITE APENAS NÚMEROS!")
                         input("ENTER PARA CONTINUAR")             
         if escolha == "7": #Banco
+            registrar_acao_jogador(None, "Acessou o Banco")
             banco = True
             while banco is True:
                 try:
@@ -918,38 +1158,38 @@ def Jogo_principal():
                     print("BANDO DO BRASIL".center(40,"/"))
                     print("*Seu dinheiro rende mais, dependendo do valor guardado*\n[1]Depositar dinheiro               [3]Depositar Tudo \n[2]Retirar dinheiro                 [4]Retirar tudo")
                     if carteira["Banco"] < 0:
-                        print(f"Sua conta está no vermelho! Você deve R${carteira["Banco"]:.2f} para o banco\nTodo valor colocado será descontado pela dívida.\n")
+                        print(f"Sua conta está no vermelho! Você deve R${carteira["Banco"]:,.2f} para o banco\nTodo valor colocado será descontado pela dívida.\n")
                     banco_escolha = input("Escolha uma opção| ENTER PARA SAIR\n: ")
-                    if banco_escolha == "testesenha":
+                    if banco_escolha == "modoANTIbryan":
                         print("DEBUG acessado")
                         carteira["Bolso"] += 10000000000
                         input("ENTER")
                     if banco_escolha == "1": #depositar
-                        print(f"Você tem R${carteira['Bolso']:.2f} em dinheiro")
+                        print(f"Você tem R${carteira['Bolso']:,.2f} em dinheiro")
                         quantia = float(input("Quanto para colocar na conta?\n: ").replace(",", "."))
                         if round(quantia,2) <= float(carteira["Bolso"]) and quantia >=0:
                             carteira["Bolso"] = round(float(carteira["Bolso"]) - quantia, 2)
                             carteira["Banco"] = round(float(carteira["Banco"]) + quantia, 2)
-                            print(f"R${quantia:.2f} foi depositado na conta!")
+                            print(f"R${quantia:,.2f} foi depositado na conta!")
                             salvar_dados("carteira", carteira)
                             input("ENTER PARA COTINUAR")
                         else:
                             os.system('cls' if os.name == 'nt' else 'clear')
-                            print(f"Você não tem esse valor: R${quantia:.2f}")
+                            print(f"Você não tem esse valor: R${quantia:,.2f}")
                             input("Enter para continuar")
                     if banco_escolha == "2": #sacar
                         if carteira["Banco"] > 0:
-                            print(f"Você tem R${carteira['Banco']:.2f} na conta")
+                            print(f"Você tem R${carteira['Banco']:,.2f} na conta")
                             quantia = float(input("Quanto para retirar da conta?\n: ").replace(",", "."))
                             if round(quantia,2) <= float(carteira["Banco"]) and  quantia >0:
                                 carteira["Banco"] -= round(float( quantia))
                                 carteira['Bolso'] += round(float( quantia))
-                                print(f"R${quantia:.2f} foi retirado da sua conta!")
+                                print(f"R${quantia:,.2f} foi retirado da sua conta!")
                                 salvar_dados("carteira", carteira)
                                 input("ENTER PARA COTINUAR")
                             else:
                                 os.system('cls' if os.name == 'nt' else 'clear')
-                                print(f"Você não tem esse valor: R${quantia:.2f}, você tem R${carteira['Banco']:.2f}")
+                                print(f"Você não tem esse valor: R${quantia:,.2f}, você tem R${carteira['Banco']:,.2f}")
                                 input("Enter para continuar")
                         else:
                             os.system('cls' if os.name == 'nt' else 'clear')
@@ -957,7 +1197,7 @@ def Jogo_principal():
                             input("Enter para continuar")
                     if banco_escolha == "3": #Depositar tudo
                         carteira["Banco"] += carteira["Bolso"]
-                        print(f"R${carteira["Bolso"]:.2f} foi depositado à sua conta!")
+                        print(f"R${carteira["Bolso"]:,.2f} foi depositado à sua conta!")
                         carteira["Bolso"] = 0
                         salvar_dados("carteira",carteira)
                         sleep(1)
@@ -965,7 +1205,7 @@ def Jogo_principal():
                     if banco_escolha == "4": #Sacar tudo
                         if not carteira["Banco"] <0:
                             carteira["Bolso"]+=carteira["Banco"]
-                            print(f"Você sacou todo o valor|R${carteira["Banco"]:.2f}")
+                            print(f"Você sacou todo o valor|R${carteira["Banco"]:,.2f}")
                             carteira["Banco"] = 0
                             salvar_dados("carteira",carteira)
                             sleep(1)
@@ -975,7 +1215,7 @@ def Jogo_principal():
                             sleep(1)
                             os.system('cls' if os.name == 'nt' else 'clear')
                     if banco_escolha == "":
-                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
                         banco = False
                         break
                 except ValueError:
@@ -983,6 +1223,7 @@ def Jogo_principal():
                     print("Digite um valor válido")
                     input("ENTER para continuar")
         if escolha == "8": #Ver garagem
+            registrar_acao_jogador("passou_por_garagem", "Ver a Garagem")
             ambiente = True
             while ambiente:
                 print("SUA GARAGEM".center(40,"="))
@@ -996,6 +1237,7 @@ def Jogo_principal():
                 if saida.strip() == "":
                     break
         if escolha == "9": #ver Loja
+            registrar_acao_jogador("loja_comprou_algo", "Entrou no Mercado / Loja de Itens")
             if carteira["Banco"] < 0:
                 print("Pague suas dívidas antes de efetuar qualquer compra!")
                 input("ENTER PARA CONTINUAR")
@@ -1005,11 +1247,11 @@ def Jogo_principal():
                     os.system('cls' if os.name == 'nt' else 'clear')
                     print("AMERICANAS".center(40,"-"))
                     for i,(mercadoria,valor) in enumerate(mercado.items(),start = 1):
-                        status = f"R${valor:.2f}" if mercadoria not in Garagem else "[ESGOTADO]"
+                        status = f"R${valor:,.2f}" if mercadoria not in Garagem else "[ESGOTADO]"
                         print(f"[{i}] {mercadoria}: {status}")
                     item = input("ESCOLHA UM ITEM| ENTER PARA SAIR\n-> ")
                     if item == "":
-                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
                         ambiente = False
                         break
                     else:
@@ -1021,7 +1263,7 @@ def Jogo_principal():
                                 nome_item = lista_mercadoria[indice]
                                 preco = mercado[nome_item] # Pega o valor direto
                             
-                                print(f"Você selecionou {nome_item} - Preço: R${preco:.2f}")
+                                print(f"Você selecionou {nome_item} - Preço: R${preco:,.2f}")
                                 confirmar = input(f"Confirmar compra de {nome_item}? S/N: ").upper()
                                 if confirmar == "S":
                                     if carteira["Bolso"] >= preco:
@@ -1064,6 +1306,7 @@ def Jogo_principal():
         if escolha == "0": #SAIR#
             break
         if escolha == "10":#Pesca
+            registrar_acao_jogador("passou_por_pesca", "Foi pescar com Barco")
             if not "Barco de pesca" in Garagem:
                 print("selecione um valor válido")
                 input("ENTER PARA CONTINUAR")
@@ -1089,7 +1332,7 @@ def Jogo_principal():
                     print(f"[{a + 1}] Um peixe {tamanhos_ok} apareceu!")
                 a = input("ESCOLHA O PEIXE|ENTER PARA SAIR\n: ")
                 if a == "":
-                    atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+                    atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
                     trabalho = False
                     break
                 idx = int(a) - 1
@@ -1116,7 +1359,7 @@ def Jogo_principal():
                         if carteira["Bolso"] > 200.40:
                             carteira["Bolso"] -= perda
                         else:
-                            print(f"Você não tem dinheiro na mão, Foi descontado de sua conta os R${perda:.2f}.")
+                            print(f"Você não tem dinheiro na mão, Foi descontado de sua conta os R${perda:,.2f}.")
                             carteira["Banco"] -= perda
                         salvar_dados("carteira", carteira)
                         v = input("Continuar a pesca?\nS/N: ")
@@ -1147,7 +1390,7 @@ def Jogo_principal():
                         if carteira["Bolso"] > 150.40:
                             carteira["Bolso"] -= perda
                         else:
-                            print(f"Você não tem dinheiro na mão, Foi descontado de sua conta os R${perda:.2f}.")
+                            print(f"Você não tem dinheiro na mão, Foi descontado de sua conta os R${perda:,.2f}.")
                             carteira["Banco"] -= perda
                         salvar_dados("carteira", carteira)
                         v = input("Continuar a pesca?\nS/N: ")
@@ -1178,7 +1421,7 @@ def Jogo_principal():
                         if carteira["Bolso"] > 10.40:
                             carteira["Bolso"] -= perda
                         else:
-                            print(f"Você não tem dinheiro na mão, Foi descontado de sua conta os R${perda:.2f}.")
+                            print(f"Você não tem dinheiro na mão, Foi descontado de sua conta os R${perda:,.2f}.")
                             carteira["Banco"] -= perda
                         salvar_dados("carteira", carteira)
                         v = input("Continuar a pesca?\nS/N: ")
@@ -1209,7 +1452,7 @@ def Jogo_principal():
                         if carteira["Bolso"] > 10.40:
                             carteira["Bolso"] -= perda
                         else:
-                            print(f"Você não tem dinheiro na mão, Foi descontado de sua conta os R${perda:.2f}.")
+                            print(f"Você não tem dinheiro na mão, Foi descontado de sua conta os R${perda:,.2f}.")
                             carteira["Banco"] -= perda
                         salvar_dados("carteira", carteira)
                         v = input("Continuar a pesca?\nS/N: ")
@@ -1242,6 +1485,7 @@ def Jogo_principal():
                             trabalho = False
                             break
         if escolha == "11":#Moto
+            registrar_acao_jogador("passou_por_moto_boy", "Foi fazer Moto Boy")
             if not "Moto" in Garagem:
 
                 print("selecione um valor válido")
@@ -1272,12 +1516,12 @@ def Jogo_principal():
                     pacote = (valor,valor1,valor2,valor3,valor_raro)
                     escolhavalor = choice(pacote)
                     situacao_mercado.append(escolhavalor)
-                    print(f"Valor da entrega R${escolhavalor:.2f}")
-                print(f"\nGASOLINA POR VIAGEM R${posto:.2f}\n")
+                    print(f"Valor da entrega R${escolhavalor:,.2f}")
+                print(f"\nGASOLINA POR VIAGEM R${posto:,.2f}\n")
                 
                 x = input("Quantas vezes gostaria de fazer a viagem?|ENTER PARA SAIR\n: ")
                 if x == "":
-                    atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+                    atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
                     trabalho = False
                     break
                 else:
@@ -1298,21 +1542,21 @@ def Jogo_principal():
                         lucro += choice(situacao_mercado) - posto
                     carteira["Bolso"] += lucro
                     if lucro > 0:
-                        print(f"Você obteve R${lucro:.2f} de lucro!")
-                        print(f"SALDO ATUAL: R${carteira["Bolso"]:.2f}")
+                        print(f"Você obteve R${lucro:,.2f} de lucro!")
+                        print(f"SALDO ATUAL: R${carteira["Bolso"]:,.2f}")
                         sleep(3)
                         limpar()
                         salvar_dados("carteira", carteira)
                     else:
-                        print(f"Você obteve R${lucro:.2f} de PREJUÍZO!")
-                        print(f"SALDO ATUAL: R${carteira["Bolso"]:.2f}")
+                        print(f"Você obteve R${lucro:,.2f} de PREJUÍZO!")
+                        print(f"SALDO ATUAL: R${carteira["Bolso"]:,.2f}")
                         sleep(3)
                         limpar()
                         salvar_dados("carteira", carteira)
                         saldo = carteira["Bolso"]
                         if saldo <=0:
                             carteira["Banco"] += lucro
-                            print(f"você não possui dinheiro, foram descontados os R${lucro:.2f} de sua conta\nSeus fundos contam: R${carteira["Banco"]:.2f} ATUALMENTE")
+                            print(f"você não possui dinheiro, foram descontados os R${lucro:,.2f} de sua conta\nSeus fundos contam: R${carteira["Banco"]:,.2f} ATUALMENTE")
                             sleep(3)
                             limpar()
                             salvar_dados("carteira", carteira)
@@ -1325,6 +1569,7 @@ def Jogo_principal():
                         trabalho = False
                         break
         if escolha == "12":#Mineração
+            registrar_acao_jogador("passou_por_mineracao_picareta", "Minerou com Picareta")
             if not "Picareta" in Garagem:
                 print("selecione um valor válido")
                 input("ENTER PARA CONTINUAR")
@@ -1350,10 +1595,10 @@ def Jogo_principal():
                         total = 0
                         for d in caixa:
                             D = tipos_D[d]
-                            print(f"{d}: R${D:.2f}")
+                            print(f"{d}: R${D:,.2f}")
                             total +=D
                         print("_"*40)
-                        menu_mine = input(f"| Total: R${total:.2f} | ENTER PARA SAIR| [1] Vender tudo |")
+                        menu_mine = input(f"| Total: R${total:,.2f} | ENTER PARA SAIR| [1] Vender tudo |")
                         print("_"*40)
                         if menu_mine == "1":
                             if not caixa:
@@ -1361,7 +1606,7 @@ def Jogo_principal():
                                 sleep(3)
                             else:
                                 carteira["Bolso"] += total
-                                print(f"Você recebeu R${total:.2f}.")
+                                print(f"Você recebeu R${total:,.2f}.")
                                 caixa = []
                                 salvar_dados("caixa",caixa)
                                 sleep(1.9)
@@ -1369,7 +1614,7 @@ def Jogo_principal():
                             os.system('cls' if os.name == 'nt' else 'clear')
                     else:
                         if Decisao == "0":
-                            atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+                            atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
                             trabalho = False
                             break
                         else:
@@ -1411,6 +1656,7 @@ def Jogo_principal():
                                 tentativas = 0
                                 os.system('cls' if os.name == 'nt' else 'clear')
         if escolha == "13":#Mineração bit coin
+            registrar_acao_jogador("passou_por_cripto", "Acessou Mineracao de Cripto (PC Servidor)")
             if not "PC p/ servidor" in Garagem and nome != "727":
                 print("selecione um valor válido")
                 input("ENTER PARA CONTINUAR")
@@ -1462,12 +1708,12 @@ def Jogo_principal():
                                     nome_item = lista_mercadoria[indice]
                                     preco = config_pc[nome_item] - 500 # Pega o valor direto
                                     
-                                    print(f"Você selecionou {nome_item} - Preço: R${preco:.2f}")
+                                    print(f"Você selecionou {nome_item} - Preço: R${preco:,.2f}")
                                     confirmar = input(f"Confirmar Venda de {nome_item}? S/N: ").upper()
                                     if confirmar == "S":
                                         carteira["Bolso"] += preco
                                         salvar_dados("carteira",carteira)
-                                        print(f"Você recebeu R${preco:.2f}")
+                                        print(f"Você recebeu R${preco:,.2f}")
                                         sleep(2)
                                         
                                         del config_pc[nome_item]
@@ -1495,7 +1741,7 @@ def Jogo_principal():
                             limpar()
                             print("PICHAU".center(40,"_"))
                             for i , (placa,valor) in enumerate(loja_hardware.items(),start=1):
-                                print(f"[{i}] {placa}: R${valor:.2f}")
+                                print(f"[{i}] {placa}: R${valor:,.2f}")
                             idx = input("ENTER PARA SAIR| SELECIONE UM PRODUTO: ")
                             if not idx.strip(): #SAIR DA LOJA HARDWARE
                                 ambiente = False
@@ -1508,7 +1754,7 @@ def Jogo_principal():
                                 if 0 <= indice < len(lista_mercadoria):
                                     nome_item = lista_mercadoria[indice]
                                     preco = loja_hardware[nome_item]                   
-                                    print(f"Você selecionou {nome_item} - Preço: R${preco:.2f}")
+                                    print(f"Você selecionou {nome_item} - Preço: R${preco:,.2f}")
                                     confirmar = input(f"Confirmar Compra de {nome_item}? S/N: ").upper()             
                                     if confirmar == "S":
                                         if carteira["Bolso"] >= preco:
@@ -1558,7 +1804,7 @@ def Jogo_principal():
                                     for moeda, saldo in carteiraKRYPTO.items():
                                         if saldo > 0: # Só mostra as que ele tem
                                             val = saldo * campo_miner.get(moeda, 0)
-                                            print(f"• {moeda}: {saldo:.6f}| R$ {val:.2f}") # 6 casas decimais para os fragmentos
+                                            print(f"• {moeda}: {saldo:.6f}| R$ {val:,.2f}") # 6 casas decimais para os fragmentos
 
                                 print("\n" + "-"*30)
                                 iv = input("\n[ENTER] Atualizar Saldo | [V] Vender Tudo | [S] Sair\n>> ").upper().strip()
@@ -1579,7 +1825,7 @@ def Jogo_principal():
                                     salvar_dados("Carteira Krypto", carteiraKRYPTO)
                                     salvar_dados("carteira", carteira)
                                     
-                                    print(f"\nVocê recebeu R${total_venda:.2f}")
+                                    print(f"\nVocê recebeu R${total_venda:,.2f}")
                                     sleep(2)
                                     limpar()
                                 elif iv == "S":
@@ -1593,10 +1839,11 @@ def Jogo_principal():
                                 sleep(2)
                                 limpar()                    
                     if pc_indx.strip() == "": #SAIR
-                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
                         trabalho = False
                         break
         if escolha == "14":#Frete com Caminhão
+            registrar_acao_jogador("passou_por_frete", "Acessou Fretes de Caminhao")
             if not "Caminhão" in Garagem and nome != "727":
                 print("selecione um valor válido")
                 input("ENTER PARA CONTINUAR")
@@ -1633,7 +1880,7 @@ def Jogo_principal():
 --------------------------------------""")
                     hub_caminhao = input(">>>: ")
                     if hub_caminhao == "": #Sair
-                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
                         trabalho = False
                         break
                     if hub_caminhao == "1":
@@ -1649,7 +1896,7 @@ def Jogo_principal():
                             cargas_S_plus_plus = ("Turbina eólica (peça)","Equipamento médico","Laboratório móvel","Animal selvagem",)
                             cargas_Z = ("Boing 747","Foguete NASA")
                             perigo_licenca = {"D": 0, "F": 5, "S": 10, "S+": 15, "S++": 20, "Z": 30}
-                            multiplicador_prejuizo = {"D": 1.0, "F": 1.5, "S": 2.5, "Z": 5.0}
+                            multiplicador_prejuizo = {"D": 1.0, "F": 2, "S": 2.5, "Z": 5.0,'S+':3.5,'S++':4.7}
                             todas_as_categorias = [
                                 (cargas_D, "D"),
                                 (cargas_F, "F"),
@@ -1675,7 +1922,7 @@ def Jogo_principal():
 
                             
                             for i, (carga,valor, letra) in enumerate(opcoes_disponiveis, start=1):
-                                print(f"[{i}] {carga} | R${valor:.2f} |categoria: {letra} ")
+                                print(f"[{i}] {carga} | R${valor:,.2f} |categoria: {letra} ")
                             try:
                                 viagem_op = input("ENTER PARA SAIR\n>>> ")
                                 if viagem_op.strip() == "":
@@ -1718,7 +1965,7 @@ def Jogo_principal():
                                             if risco >(52 - bonus_risco):
                                                 prejuízo = round(uniform(600.40,900.99)* fator, 2)
                                                 pagamento_final -= prejuízo
-                                                print(f"\n[Houve dano na carga, isso será descontado no seu pagamento no valor de R${prejuízo:.2f}]")
+                                                print(f"\n[Houve dano na carga, isso será descontado no seu pagamento no valor de R${prejuízo:,.2f}]")
                                                 
                                                 sleep(5)
                                                 limpar()
@@ -1729,16 +1976,16 @@ def Jogo_principal():
                                             barra_viagem(tempo_viagem/2)
                                             sleep(1)
                                             if risco >(33 - bonus_risco):
-                                                prejuízo = round(uniform(900.40,1400.99)* fator, 2)
+                                                prejuízo = round(uniform(1900.40,2900.99)* fator, 2)
                                                 pagamento_final -= prejuízo
-                                                print(f"\n[Houve choque da carga com um obstáculo, isso será descontado no seu pagamento no valor de R${prejuízo:.2f}]")
+                                                print(f"\n[Houve choque da carga com um obstáculo, isso será descontado no seu pagamento no valor de R${prejuízo:,.2f}]")
                                                 
                                                 sleep(5)
                                                 limpar()
                                             else:
                                                 bonus = pagamento_final * 0.6
                                                 pagamento_final += bonus
-                                                print(f"\n[Você chegou rápido e inteiro, o bonûs foi de R${bonus:.2f}]")
+                                                print(f"\n[Você chegou rápido e inteiro, o bonûs foi de R${bonus:,.2f}]")
                                                 sleep(3)
                                                 limpar()
                                                 pass
@@ -1749,13 +1996,13 @@ def Jogo_principal():
                                             desconto_no_pagamento = (pagamento_final * 0.1 )
                                             pagamento_final *= 0.9 
                                             limpar()
-                                            print(f"\nVocê decidiu ir mais lento, o desconto dos 10% foram de R${desconto_no_pagamento:.2f}")
+                                            print(f"\nVocê decidiu ir mais lento, o desconto dos 10% foram de R${desconto_no_pagamento:,.2f}")
                                             sleep(4)
                                             limpar()
                                             if risco >(92-bonus_risco):
-                                                prejuízo = round(uniform(40.40,100.99)* fator, 2)
+                                                prejuízo = round(uniform(440.40,1100.99)* fator, 2)
                                                 pagamento_final -= prejuízo
-                                                print(f"\n[Houve um arranhão na carga, isso será descontado no seu pagamento no valor de R${prejuízo:.2f}]")
+                                                print(f"\n[Houve um arranhão na carga, isso será descontado no seu pagamento no valor de R${prejuízo:,.2f}]")
                                                 
                                                 sleep(5)
                                                 limpar()
@@ -1772,14 +2019,14 @@ def Jogo_principal():
                                         print("GANHOS".center(30,"-"))
                                         if pagamento_final > 0:
                                             if not prejuízo > 0:
-                                                print(f"Entrega feita com sucesso, você recebeu R${pagamento_final:.2f}")
+                                                print(f"Entrega feita com sucesso, você recebeu R${pagamento_final:,.2f}")
 
                                             else:
-                                                print(f"Entrega feita com turbulência, você recebeu R${pagamento_final:.2f}, mas com R${prejuízo:.2f} de prejuízo...")
+                                                print(f"Entrega feita com turbulência, você recebeu R${pagamento_final:,.2f}, mas com R${prejuízo:,.2f} de prejuízo...")
                                             carteira["Bolso"] += pagamento_final
                                             salvar_dados("carteira",carteira)
                                         else:
-                                            print(f"Entrega fracassada, houve apenas R${pagamento_final:.2f} de PREJUÍZO")
+                                            print(f"Entrega fracassada, houve apenas R${pagamento_final:,.2f} de PREJUÍZO")
                                             if carteira["Bolso"] >= pagamento_final:
                                                 carteira["Bolso"] += pagamento_final
                                                 salvar_dados("carteira",carteira)
@@ -1815,7 +2062,7 @@ def Jogo_principal():
                             limpar()
                             print("CARTEIRAS ESPECIAS".center(30,"_"))
                             for i , (licença,valor) in enumerate(Loja_caminhão.items(),start=1):
-                                status = f"R${valor:.2f}" if carteira_motorista.get(licença) != True else "[COMPRADO]"
+                                status = f"R${valor:,.2f}" if carteira_motorista.get(licença) != True else "[COMPRADO]"
                                 print(f"[{i}] |{licença}: {status}")
                             compra = input("ENTER PARA SAIR\n>>> ")
                             if compra == "": #SAIR
@@ -1864,6 +2111,7 @@ def Jogo_principal():
                                 limpar()
                                 break
         if escolha == "15":# Telefone commodit
+            registrar_acao_jogador("passou_por_bolsa", "Acessou Bolsa de Commodities (Telefone)")
             if not "Telefone" in Garagem and nome != "727":
                 print("selecione um valor válido")
                 input("ENTER PARA CONTINUAR")
@@ -1889,13 +2137,13 @@ def Jogo_principal():
                     for i , (item,valor) in enumerate(precos.items(), start=1):
                         qtd = estoque_agro.get(item, 0)
                         p_pago = historico_precos.get(item, 0)
-                        p_exibir = f"R$ {p_pago:.2f}" if qtd > 0 else "---"
+                        p_exibir = f"R$ {p_pago:,.2f}" if qtd > 0 else "---"
                         print(f"[{i}] {item:<15} | R$ {valor:<10.2f} | {qtd:<5} un (Pago: R${p_exibir})")
                     print("-" * 50)
                     print("DICA: aperte/segure [ENTER] para atualizar ou manter atualizado a info. dos preços.\n")
                     tel = input("S - Sair | C - Comprar | V/VT - Vender/Vender Tudo: ").lower()
                     if tel == "s":
-                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
                         trabalho = False
                         break
                     if tel == "c":
@@ -1909,7 +2157,7 @@ def Jogo_principal():
                             qtd = int(input(f"Quanto de {alvo} deseja comprar?\n>>>  "))
                             if qtd <= 0: raise ValueError
                             custo_total = qtd * precos[alvo]
-                            telbuy = input(f"O valor é R${custo_total:.2f}, deseja comprar?\nS/N >>> ").upper()
+                            telbuy = input(f"O valor é R${custo_total:,.2f}, deseja comprar?\nS/N >>> ").upper()
                             if telbuy == "S":
                                 if carteira["Bolso"] >= custo_total:
                                     carteira["Bolso"] -= custo_total
@@ -1956,7 +2204,7 @@ def Jogo_principal():
                                 salvar_dados("carteira", carteira)
                                 salvar_dados("estoque agro", estoque_agro)
                                 
-                                print(f"Você vendeu {qtd_venda} de {alvo} por R$ {valor_venda:.2f}")
+                                print(f"Você vendeu {qtd_venda} de {alvo} por R$ {valor_venda:,.2f}")
                                 sleep(2)
                                 limpar()
                             else:
@@ -1990,13 +2238,14 @@ def Jogo_principal():
                             salvar_dados("estoque agro", estoque_agro)
                             salvar_dados("Historico preços", historico_precos)
                             print(f"💰 SUCESSO! Tudo foi vendido.")
-                            print(f"Total recebido: R$ {total_geral_venda:.2f}")
+                            print(f"Total recebido: R$ {total_geral_venda:,.2f}")
                         else:
                             print("Você não tem nada em estoque para vender!")
                             
                         sleep(3)
                         limpar()
         if escolha == "16":# Bike boy
+            registrar_acao_jogador("passou_por_bike_boy", "Foi fazer Bike Boy")
             if not "Bicicleta" in Garagem and nome != 727:
 
                 print("selecione um valor válido")
@@ -2023,12 +2272,12 @@ def Jogo_principal():
                         escolhavalor = choice(pacote)
                         escolhadistancia = choice(distanciaB)
                         situacao_mercado.append((escolhavalor, escolhadistancia))
-                        print(f"[{_}] Valor da entrega R${escolhavalor:.2f} KM:{escolhadistancia}")
+                        print(f"[{_}] Valor da entrega R${escolhavalor:,.2f} KM:{escolhadistancia}")
                     
                     
                     x = input("Qual viagem gostaria de fazer?|ENTER PARA SAIR| D para descansar\n>>>: ").strip().upper()
                     if x == "": #SAIR
-                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar)
+                        atualizar_nuvem(nome, carteira["Bolso"], carteira["Banco"], Garagem, zerar,bandeira['empresa'])
                         trabalho = False
                         break
                     else: #SAIR COMP    
@@ -2068,7 +2317,7 @@ def Jogo_principal():
                             valor_final = escolha[0]
                             km_final = escolha[1]
                             custo_fadiga = km_final * 1
-                            passagem = input(f"Você selecionou a corrida {x}\nValor R${valor_final:.2f} | {km_final} KM\n Continuar S/N >>> ").upper().strip()
+                            passagem = input(f"Você selecionou a corrida {x}\nValor R${valor_final:,.2f} | {km_final} KM\n Continuar S/N >>> ").upper().strip()
                             if passagem == "N":
                                 continue
                             else:
@@ -2080,7 +2329,7 @@ def Jogo_principal():
                                     fadiga -= custo_fadiga
                                     
                                     carteira["Bolso"] += valor_final
-                                    print(f"\nViagem tranquila! Fadiga restante: {fadiga}\nR${valor_final:.2f} Ganho!")
+                                    print(f"\nViagem tranquila! Fadiga restante: {fadiga}\nR${valor_final:,.2f} Ganho!")
                                 else:
                                     deficit = custo_fadiga - fadiga
                                     fadiga = 0
@@ -2088,12 +2337,12 @@ def Jogo_principal():
                                     valor_ganho = valor_final - multa
                                     valor_ganho_falso_positivo = abs(valor_ganho)
                                     if valor_ganho_falso_positivo > carteira["Bolso"]:
-                                        print(f"\nVocê não possui dinheiro para multa, aplicamos ela em sua conta. No valor de R${valor_ganho:.2f}")
+                                        print(f"\nVocê não possui dinheiro para multa, aplicamos ela em sua conta. No valor de R${valor_ganho:,.2f}")
                                         carteira["Banco"] -= valor_ganho
                                     else:
                                         carteira["Bolso"] -= valor_ganho
                                     print(f"\nVOCÊ EXAUSTOU! Faltou {deficit} de energia.")
-                                    print(f"Multa por cansaço: R${multa:.2f} - Valor da entrega: R${valor_final:.2f} = R${valor_ganho:.2f}")
+                                    print(f"Multa por cansaço: R${multa:,.2f} - Valor da entrega: R${valor_final:,.2f} = R${valor_ganho:,.2f}")
                                 salvar_dados("carteira",carteira)
                                 salvar_dados("fadiga", fadiga)
                                 v = input("\nContinuar a rota?\nS/N: ").upper().strip()
@@ -2111,26 +2360,272 @@ def Jogo_principal():
                         input("ENTER PARA CONTINUAR")
                         limpar()
                         continue
-        if escolha == "R":
+        if escolha == "R": #ver ranking
+            registrar_acao_jogador(None, "Verificou o Ranking Global")
             limpar()
             ver_ranking(nome)
+        if escolha == "E": #ver faculdade
+            if carteira["Banco"] < 0 and nome != "727":
+                print("Pague sua dívida primeiro.")
+                sleep(2)
+                limpar()
+            else:
+                if not "Carro" in Garagem:
+                    print("A faculdade fica muito longe, Você não consegue ir lá...\nTalvez seria melhor comprar um carro")
+                    sleep(4)
+                    limpar()
+                else:
+                    barra_viagem(5)
+                    facul = True
+                    while facul:
+                        limpar()
+                        print("ENSINO SUPERIOR".center(30,"="))
+                        for i , (nome_faculdade , progresso) in enumerate(estudos.items(),start= 1):
+                            for nome_taxa_pag , condição in estudos_pag_inicial.items():
+                                if nome_faculdade == nome_taxa_pag:
+                                    if condição == False:
+                                        print(f"[{i}] {nome_faculdade}- VALOR INICIAL: R$130.000,00 ")
+                                    else:
+                                        if progresso < 100:
+                                            print(f"[{i}] {nome_faculdade}: Progresso {progresso}% [R$10.000,00 PARA PROSSEGUIR]")
+                                        else:
+                                            print(f"[{i}] {nome_faculdade}: CONCLUÍDO")
+                        opc_facul = input("ENTER PARA SAIR| ESCOLHA ALGUM ITEM\n: ").strip()
+                        if opc_facul == "":
+                            facul = False
+                            barra_viagem(5)
+                            limpar()
+                            break
+                        else:
+                            try:
+                                indice = int(opc_facul) - 1
+                                lista_facul = list(estudos)
+                                if not 0 <= indice < len(lista_facul):
+                                    raise ValueError
+                                else:
+                                    nome_facul = lista_facul[indice]
+                                    if estudos_pag_inicial[nome_facul] == False:
+                                        compra = input(f"Você gostaria de pagar o valor inicial da faculdade de {nome_facul}\n pelo valor de R$130.000,00?\nS/N: ").upper().strip()
+                                        if compra == "S":
+                                            if carteira['Bolso'] >= 130000:
+                                                print("Pagamento concluído")
+                                                estudos_pag_inicial[nome_facul] = True
+                                                salvar_dados("estudos_pag_inicial",estudos_pag_inicial)
+                                                carteira["Bolso"] -= 130000
+                                                salvar_dados("carteira",carteira)
+                                                sleep(2)
+                                                limpar()
+                                            else:
+                                                print("Dinheiro insuficiente")
+                                                sleep(2)
+                                                limpar()
+                                        else:
+                                            print("Pagamento cancelado")
+                                            sleep(2)
+                                            limpar()
+                                    elif estudos_pag_inicial[nome_facul] == True:
+                                        if estudos[nome_facul] == 100:
+                                            print("Você já concluiu este ensino.")
+                                            sleep(2)
+                                            limpar()
+                                        else: 
+                                            compra = input(f"Você gostaria de continuar seu progresso de {estudos[nome_facul]}% para {estudos[nome_facul] + 10}%\nPor R$10.000,00 ?\nS/N: ").upper().strip()
+                                            if compra == "S":
+                                                if carteira['Bolso'] >= 10000:
+                                                    print("Pagamento concluído")
+                                                    estudos[nome_facul] += 10 
+                                                    salvar_dados("estudos",estudos)
+                                                    carteira["Bolso"] -= 10000
+                                                    salvar_dados("carteira",carteira)
+                                                    sleep(2)
+                                                    limpar()
+                                                else:
+                                                    print("Dinheiro insuficiente")
+                                                    sleep(2)
+                                                    limpar()
+                                            else:
+                                                print("Pagamento cancelado")
+                                                sleep(2)
+                                                limpar()
+                            except (TypeError, ValueError):
+                                print("VALOR INVÁLIDO")
+                                sleep(2)
+                                continue
+        if escolha == "C": #ver Empresa
+            if not all(valor == 100 for valor in estudos.values()):
+                continue
+            else:
+                hub_empresa = True
+                limpar()
+                if not os.path.exists("nome_empresa.json"):
+                    nome_escolhido = input("Qual será o nome de sua empresa?\n: ").strip
+                    nome_empresa = nome_escolhido
+                    salvar_dados("nome_empresa",nome_empresa)
+                while hub_empresa:
+                    limpar()
+                    print(f"{nome_empresa}".center(len(nome_empresa + 30),"="))
+                    # 1. Calcula o texto do Upgrade antes do print
+                    if empresa['Nível'] < 5:
+                        txt_upgrade = f"R${empresa['custo_upgrade']:,.2f}"
+                    else:
+                        txt_upgrade = "MÁXIMO"
+
+                    # 2. Calcula o texto do Marketing antes do print
+                    if empresa['Nível_propaganda'] < 5:
+                        txt_marketing = f"R${empresa['custo_propaganda']:,.2f}"
+                    else:
+                        txt_marketing = "MÁXIMO"
+
+                    # 3. Agora o print fica ridículo de limpo, sem nenhum if/else interno para dar erro!
+                    print(f"GERENCIE SEU NEGÓCIO\nCEO:{nome}\n"
+                        f"Nível da empresa: {empresa['Nível'] if empresa['Nível'] < 5 else 'MÁXIMO'}\n"
+                        f"Nível do Marketing: {empresa['Nível_propaganda'] if empresa['Nível_propaganda'] < 5 else 'MÁXIMO'}\n"
+                        f"Faturamento: R${empresa['Faturamento']:,.2f}\n\n"
+                        f" [1] UPGRADE: {txt_upgrade}      [2] MARKETING: {txt_marketing}")
+
+
+                    gerent_op = input("ENTER PARA SAIR| >>> ").strip()
+                    if gerent_op == "":
+                        hub_empresa = False
+                        limpar()
+                        break
+                    if gerent_op == "1":
+                        if empresa['Nível'] == 5:
+                            print("Você atingiu o Nível máximo da infraestrutura")
+                            sleep(2)
+                            limpar()
+                        else:
+                            compra = input(f"Você gostaria de comprar um Upgrade para a infraestrutura da empresa por R${empresa['custo_upgrade']:,.2f} ?\nS/N: ").strip().upper()
+                            if compra == "S":
+                                if carteira["Bolso"] >= empresa["custo_upgrade"]:
+                                    empresa['Nível'] += 1
+                                    carteira['Bolso'] -= empresa["custo_upgrade"]
+                                    if um_um == 1:
+                                        um_um += 1
+                                        salvar_dados("aviso",um)
+                                        bandeira["empresa"] = True
+                                        salvar_dados("bandeira",bandeira)
+                                        threading.Thread(target=pagamento_da_empresa,daemon=True).start()
+
+                                    if empresa['custo_upgrade'] < 6431250:
+                                        empresa["custo_upgrade"] *= 3.5
+                                    else:
+                                        empresa["custo_upgrade"] *= 2
+                                    empresa['Faturamento'] = (empresa['Nível'] * 1000000) * (1 + empresa['Nível_propaganda'] * 3.76) + (empresa['Nível_propaganda'] * 200000)
+                                    print("Compra realizada com sucesso")
+
+                                    salvar_dados("carteira",carteira)
+                                    salvar_dados("empresa",empresa)
+                                    sleep(2)
+                                    limpar()
+                                else:
+                                    print("Saldo insuficiente")
+                                    sleep(2)
+                                    limpar()
+                            else:
+                                limpar()
+                    if gerent_op == "2":
+                        if empresa['Nível_propaganda'] == 5:
+                            print("Você atingiu o Nível máximo do Marketing")
+                            sleep(2)
+                            limpar()
+                        else:
+                            if empresa['Nível'] == 0:
+                                print("Primeiro tem de haver uma empresa para poder publicar sobre ela!")
+                                sleep(2)
+                                limpar()
+                            else:
+                                compra = input(f"Você gostaria de comprar um Upgrade para o Marketing da empresa por R${empresa['custo_propaganda']:,.2f} ?\nS/N: ").strip().upper()
+                                if compra == "S":
+                                    if carteira["Bolso"] >= empresa['custo_propaganda']:
+                                        empresa['Nível_propaganda'] += 1
+                                        carteira['Bolso'] -= empresa['custo_propaganda']
+                                        if empresa['custo_propaganda'] < 1225000:
+                                            empresa['custo_propaganda'] *= 3.5
+                                        else:
+                                            empresa['custo_propaganda'] *= 2
+                                        print("Compra realizada com sucesso")
+                                        empresa['Faturamento'] = (empresa['Nível'] * 1000000) * (1 + empresa['Nível_propaganda'] * 3.76) + (empresa['Nível_propaganda'] * 200000)
+                                        salvar_dados("carteira",carteira)
+                                        salvar_dados("empresa",empresa)
+                                        sleep(2)
+                                        limpar()
+                                    else:
+                                        print("Saldo insuficiente")
+                                        sleep(2)
+                                        limpar()
+                                else:
+                                    limpar()
+
+
+
+
+def enviar_nota_jogo(nota,comentario="Sem comentário",jogador="Anônimo"):
+    # Cole aqui a URL do seu webhook do Discord
+    url_webhook = "https://discord.com/api/webhooks/1535025828176593110/006EOnsF_-sj3jHDL71h5uh89FjH80Q-vIkFN9q3AzucPLqsDtzXvocRsYK00Fjw6sm9"
+    
+    # Formata a mensagem de um jeito visualmente legal (Rich Embed)
+    payload = {
+        "embeds": [
+            {
+                "title": "🎮 Nova Avaliação do Jogo!",
+                "color": 3066993,  # Cor verde em formato decimal
+                "fields": [
+                    {"name": "⭐ Nota", "value": f"**{nota}/10**", "inline": True},
+                    {"name": "💬 Feedback", "value": comentario, "inline": False},
+                    {"name": "🤖 Jogador", "value": jogador, "inline": False}
+                ],
+                "footer": {"text": "Sistema de Feedback Automático"}
+            }
+        ]
+    }
+    
+    # Envia os dados para o Discord
+    resposta = requests.post(url_webhook, json=payload)
+    
+    if resposta.status_code == 204:
+        print("Avaliação enviada com sucesso para o Discord!")
+    else:
+        print(f"Erro ao enviar: {resposta.status_code}")
 
 
 def menu_hub():
     while True:
         limpar()
         print("MENU".center(50,"-"))
-        escolha = input("[1] PRINCIPAL| JOGO DA VIDA\n[2]Versão do jogo\n>>> ")
+        print("*um detalhe.. é bom dar uma olhada na opção 2 pra saber o que tem de novidade no jogo...")
+        escolha = input("[1]PRINCIPAL|Life Business-Gold Trial\n[2]Versão do jogo\n[3]Avalie o Jogo!\n>>> ")
         if escolha == "1":
             Jogo_principal()
         if escolha == "2":
             limpar()
-            print("Versão: 11V | Paciência de Rodolfo Cavalcanti")
+            print("Versão: 12.5V | Business Update - Debug +")
             input("ENTER")
             continue
+        if escolha == "3":
+            limpar()
+            print("De 0 a 10, Qual a nota você daria para o Jogo? Fique a vontade para enviar uma mensagem|DEIXE VAZIO PARA NÃO RESPONDER|")
+            nota = input("[PRIMEIRO ESCOLHA DE 0 à 10 *respeite o limite]: ").strip()
+            comentario = input("[AGORA SEU COMENTÁRIO]: ")
+            user = input("[SE QUISER DÊ SEU NOME/NICK NAME]: ").strip()
+            if nota != "" and nota.isdigit():
+                notaverifica = int(nota)
+                if notaverifica <= 10 and notaverifica >= 0:
+                    if user == "":
+                        user = "Anônimo"
+                    enviar_nota_jogo(nota,comentario,user)
+                else:
+                    print("\nVALOR DA NOTA INVÁLIDO")
+                    sleep(2)
+                    limpar()
+            else:
+                print("\nAVALIAÇÃO CANCELADA")
+                sleep(2)
+                limpar()
         else:
             limpar()
             print("Dê uma alternativa válida.")
             sleep(2)
+
 if __name__ == "__main__":
     menu_hub()
